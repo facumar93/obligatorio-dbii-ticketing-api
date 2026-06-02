@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Ticketing Mundial 2026</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 32px;
+            background: #f5f5f5;
+            color: #222;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .subtitulo {
+            color: #555;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+
+        input {
+            padding: 8px;
+            margin: 4px 8px 8px 0;
+            min-width: 220px;
+        }
+
+        label {
+            display: inline-block;
+            margin-top: 8px;
+            margin-right: 8px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 12px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        th {
+            background: #eee;
+            text-align: left;
+        }
+
+        pre {
+            background: #222;
+            color: #eee;
+            padding: 12px;
+            overflow-x: auto;
+        }
+
+        .mensaje {
+            margin-top: 12px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Ticketing Mundial 2026</h1>
+    <div class="subtitulo">Frontend mínimo servido por Spring Boot</div>
+
+    <div class="panel">
+        <h2>Estado técnico</h2>
+        <button onclick="consultarAppHealth()">Probar aplicación</button>
+        <button onclick="consultarDbHealth()">Probar DB</button>
+        <pre id="estado">Sin consultar.</pre>
+    </div>
+
+    <div class="panel">
+        <h2>Países</h2>
+        <button onclick="cargarPaises()">Cargar países desde DB</button>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Código ISO</th>
+                    <th>Nombre</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-paises">
+                <tr>
+                    <td colspan="3">Sin datos cargados.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Alta básica de usuario general</h2>
+
+        <div>
+            <input id="correo" placeholder="Correo" value="usuario3@demo.com">
+            <input id="password" placeholder="Contraseña" type="password" value="ClaveDemo123!">
+        </div>
+
+        <div>
+            <input id="paisDocumento" placeholder="País documento" value="URU">
+            <input id="tipoDocumento" placeholder="Tipo documento" value="CI">
+            <input id="numeroDocumento" placeholder="Número documento" value="11223344">
+        </div>
+
+        <div>
+            <input id="paisDireccion" placeholder="País dirección" value="URU">
+            <input id="localidad" placeholder="Localidad" value="Montevideo">
+            <input id="calle" placeholder="Calle" value="18 de Julio">
+            <input id="numDireccion" placeholder="Número dirección" value="999">
+            <input id="codigoPostal" placeholder="Código postal" value="11100">
+        </div>
+
+        <button onclick="registrarUsuario()">Registrar usuario</button>
+        <div id="mensaje-alta-usuario" class="mensaje"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Usuarios generales</h2>
+        <button onclick="cargarUsuarios()">Cargar usuarios desde DB</button>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Correo</th>
+                    <th>Documento</th>
+                    <th>Localidad</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-usuarios">
+                <tr>
+                    <td colspan="5">Sin datos cargados.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function consultarAppHealth() {
+            const respuesta = await fetch('/app/health');
+            const datos = await respuesta.json();
+            mostrarEstado(datos);
+        }
+
+        async function consultarDbHealth() {
+            const respuesta = await fetch('/db/health');
+            const datos = await respuesta.json();
+            mostrarEstado(datos);
+        }
+
+        async function cargarPaises() {
+            const respuesta = await fetch('/paises');
+            const paises = await respuesta.json();
+
+            const tabla = document.getElementById('tabla-paises');
+            tabla.innerHTML = '';
+
+            paises.forEach(pais => {
+                const fila = document.createElement('tr');
+
+                fila.innerHTML = `
+                    <td>${pais.idPais}</td>
+                    <td>${pais.codigoIso}</td>
+                    <td>${pais.nombre}</td>
+                `;
+
+                tabla.appendChild(fila);
+            });
+        }
+
+        async function cargarUsuarios() {
+            const respuesta = await fetch('/usuarios');
+            const usuarios = await respuesta.json();
+
+            const tabla = document.getElementById('tabla-usuarios');
+            tabla.innerHTML = '';
+
+            usuarios.forEach(usuario => {
+                const fila = document.createElement('tr');
+
+                fila.innerHTML = `
+                    <td>${usuario.idUsuario}</td>
+                    <td>${usuario.correo}</td>
+                    <td>${usuario.tipoDocumento} ${usuario.numeroDocumento}</td>
+                    <td>${usuario.localidad}</td>
+                    <td>${usuario.estado}</td>
+                `;
+
+                tabla.appendChild(fila);
+            });
+        }
+
+        async function registrarUsuario() {
+            const usuario = {
+                correo: document.getElementById('correo').value,
+                password: document.getElementById('password').value,
+                paisDocumento: document.getElementById('paisDocumento').value,
+                tipoDocumento: document.getElementById('tipoDocumento').value,
+                numeroDocumento: document.getElementById('numeroDocumento').value,
+                paisDireccion: document.getElementById('paisDireccion').value,
+                localidad: document.getElementById('localidad').value,
+                calle: document.getElementById('calle').value,
+                numDireccion: document.getElementById('numDireccion').value,
+                codigoPostal: document.getElementById('codigoPostal').value
+            };
+
+            const respuesta = await fetch('/usuarios', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(usuario)
+            });
+
+            const datos = await respuesta.json();
+
+            document.getElementById('mensaje-alta-usuario').textContent =
+                datos.message || 'Respuesta recibida';
+
+            if (respuesta.ok) {
+                await cargarUsuarios();
+            }
+        }
+
+        function mostrarEstado(datos) {
+            document.getElementById('estado').textContent =
+                JSON.stringify(datos, null, 2);
+        }
+    </script>
+</body>
+
+</html>

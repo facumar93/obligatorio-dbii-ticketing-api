@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Registro - Ticketing Mundial 2026</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 32px;
+            background: #f5f5f5;
+            color: #222;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .subtitulo {
+            color: #555;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+
+        .detalle {
+            color: #555;
+            margin-top: 4px;
+            margin-bottom: 12px;
+        }
+
+        .campo {
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        input,
+        select {
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 520px;
+            padding: 8px;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+
+        button:disabled,
+        fieldset:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        fieldset {
+            border: 0;
+            padding: 0;
+            margin: 0;
+        }
+
+        pre {
+            background: #222;
+            color: #eee;
+            padding: 12px;
+            overflow-x: auto;
+        }
+
+        .mensaje {
+            margin-top: 12px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Registro de usuario</h1>
+    <div class="subtitulo">Datos de dominio para Ticketing Mundial 2026</div>
+
+    <div class="panel">
+        <h2>Identidad Firebase</h2>
+
+        <div class="detalle">
+            Esta vista usa una sesión Firebase propia en memoria.
+            Primero ingresá con Google y después completá los datos de registro.
+        </div>
+
+        <button id="btn-login-google">Ingresar con Google</button>
+        <div id="mensaje-auth" class="mensaje">No autenticado.</div>
+        <pre id="usuario-firebase">No autenticado.</pre>
+    </div>
+
+    <div class="panel">
+        <h2>Datos personales</h2>
+
+        <form id="form-registro">
+            <fieldset id="campos-registro" disabled>
+                <div class="campo">
+                    <label for="nombre">Nombre</label>
+                    <input id="nombre" name="nombre" required>
+                </div>
+
+                <div class="campo">
+                    <label for="apellido">Apellido</label>
+                    <input id="apellido" name="apellido" required>
+                </div>
+
+                <div class="campo">
+                    <label for="id-tipo-documento">Tipo de documento</label>
+                    <select id="id-tipo-documento" name="id_tipo_documento" required>
+                        <option value="">Seleccionar...</option>
+                    </select>
+                </div>
+
+                <div class="campo">
+                    <label for="id-pais-documento">País del documento</label>
+                    <select id="id-pais-documento" name="id_pais_documento" required>
+                        <option value="">Seleccionar...</option>
+                    </select>
+                </div>
+
+                <div class="campo">
+                    <label for="numero-documento">Número de documento</label>
+                    <input id="numero-documento" name="numero_documento" required>
+                </div>
+
+                <div class="campo">
+                    <label for="id-pais-direccion">País de dirección</label>
+                    <select id="id-pais-direccion" name="id_pais_direccion" required>
+                        <option value="">Seleccionar...</option>
+                    </select>
+                </div>
+
+                <div class="campo">
+                    <label for="localidad">Localidad</label>
+                    <input id="localidad" name="localidad" required>
+                </div>
+
+                <div class="campo">
+                    <label for="calle">Calle</label>
+                    <input id="calle" name="calle" required>
+                </div>
+
+                <div class="campo">
+                    <label for="numero-direccion">Número de dirección</label>
+                    <input id="numero-direccion" name="numero_direccion" required>
+                </div>
+
+                <div class="campo">
+                    <label for="codigo-postal">Código postal</label>
+                    <input id="codigo-postal" name="codigo_postal" required>
+                </div>
+
+                <button type="submit">Registrar usuario</button>
+            </fieldset>
+        </form>
+
+        <h3>Respuesta del backend</h3>
+        <pre id="respuesta-backend">Sin enviar.</pre>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import {
+            getAuth,
+            GoogleAuthProvider,
+            signInWithPopup,
+            onAuthStateChanged,
+            setPersistence,
+            inMemoryPersistence
+        } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
+            authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
+            projectId: "dbii-ticketing-grupo6",
+            storageBucket: "dbii-ticketing-grupo6.firebasestorage.app",
+            messagingSenderId: "454622640345",
+            appId: "1:454622640345:web:af52e5c7e653c4373926c8"
+        };
+
+        const btnLoginGoogle = document.getElementById('btn-login-google');
+        const mensajeAuth = document.getElementById('mensaje-auth');
+        const camposRegistro = document.getElementById('campos-registro');
+        const formRegistro = document.getElementById('form-registro');
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+        const persistenceReady = setPersistence(auth, inMemoryPersistence);
+
+        auth.languageCode = 'es';
+
+        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
+        formRegistro.addEventListener('submit', registrarUsuario);
+
+        onAuthStateChanged(auth, async usuario => {
+            camposRegistro.disabled = true;
+
+            if (!usuario) {
+                mensajeAuth.textContent = 'No autenticado.';
+                mostrarTexto('usuario-firebase', 'No autenticado.');
+                return;
+            }
+
+            mensajeAuth.textContent = 'Autenticado con Firebase. Cargando catálogos...';
+
+            mostrarJson('usuario-firebase', {
+                uid: usuario.uid,
+                email: usuario.email,
+                emailVerified: usuario.emailVerified,
+                name: usuario.displayName || null
+            });
+
+            try {
+                await cargarCatalogos();
+                camposRegistro.disabled = false;
+                mensajeAuth.textContent = 'Autenticado. Podés completar el registro.';
+            } catch (error) {
+                mensajeAuth.textContent = 'No se pudieron cargar los catálogos.';
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: 'ERROR_CARGA_CATALOGOS',
+                    message: error.message
+                });
+            }
+        });
+
+        async function ingresarConGoogle() {
+            try {
+                mensajeAuth.textContent = 'Abriendo login con Google...';
+                await persistenceReady;
+                await signInWithPopup(auth, googleProvider);
+            } catch (error) {
+                mensajeAuth.textContent = 'Error durante el login con Google.';
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: error.code || null,
+                    message: error.message
+                });
+            }
+        }
+
+        async function cargarCatalogos() {
+            const [paises, tiposDocumento] = await Promise.all([
+                cargarCatalogo('/paises'),
+                cargarCatalogo('/tipos-documento')
+            ]);
+
+            llenarSelectPaises('id-pais-documento', paises);
+            llenarSelectPaises('id-pais-direccion', paises);
+            llenarSelectTiposDocumento(tiposDocumento);
+        }
+
+        async function cargarCatalogo(url) {
+            const respuesta = await fetch(url);
+            const datos = await leerRespuesta(respuesta);
+
+            if (!respuesta.ok || !Array.isArray(datos)) {
+                throw new Error(`No se pudo cargar ${url}`);
+            }
+
+            if (datos.some(item => item.status === 'ERROR')) {
+                throw new Error(`El backend devolvió un error al cargar ${url}`);
+            }
+
+            return datos;
+        }
+
+        function llenarSelectPaises(idSelect, paises) {
+            const select = document.getElementById(idSelect);
+            reiniciarSelect(select);
+
+            paises.forEach(pais => {
+                const option = document.createElement('option');
+                option.value = pais.idPais;
+                option.textContent = `${pais.nombre} (${pais.codigoIso})`;
+                select.appendChild(option);
+            });
+        }
+
+        function llenarSelectTiposDocumento(tiposDocumento) {
+            const select = document.getElementById('id-tipo-documento');
+            reiniciarSelect(select);
+
+            tiposDocumento.forEach(tipo => {
+                const option = document.createElement('option');
+                option.value = tipo.idTipoDocumento;
+                option.textContent = `${tipo.nombre} (${tipo.codigo})`;
+                select.appendChild(option);
+            });
+        }
+
+        function reiniciarSelect(select) {
+            select.replaceChildren();
+
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Seleccionar...';
+            select.appendChild(option);
+        }
+
+        async function registrarUsuario(event) {
+            event.preventDefault();
+
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            const formData = new FormData(formRegistro);
+
+            const datosDominio = {
+                nombre: formData.get('nombre'),
+                apellido: formData.get('apellido'),
+                numero_documento: formData.get('numero_documento'),
+                id_pais_documento: Number(formData.get('id_pais_documento')),
+                id_tipo_documento: Number(formData.get('id_tipo_documento')),
+                id_pais_direccion: Number(formData.get('id_pais_direccion')),
+                localidad: formData.get('localidad'),
+                calle: formData.get('calle'),
+                numero_direccion: formData.get('numero_direccion'),
+                codigo_postal: formData.get('codigo_postal')
+            };
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(datosDominio)
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-backend', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_AUTH_REGISTER',
+                    message: 'No se pudo registrar el usuario.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function leerRespuesta(respuesta) {
+            const texto = await respuesta.text();
+
+            if (!texto) {
+                return null;
+            }
+
+            try {
+                return JSON.parse(texto);
+            } catch {
+                return texto;
+            }
+        }
+
+        function mostrarJson(idElemento, datos) {
+            document.getElementById(idElemento).textContent =
+                JSON.stringify(datos, null, 2);
+        }
+
+        function mostrarTexto(idElemento, texto) {
+            document.getElementById(idElemento).textContent = texto;
+        }
+    </script>
+</body>
+
+</html>

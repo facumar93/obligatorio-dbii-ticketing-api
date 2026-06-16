@@ -35,3 +35,9 @@ build/
 .env
 
 *.log
+
+# Firebase / Google service account keys
+*service-account*.json
+*firebase*admin*.json
+*credential*.json
+firebase-keys/

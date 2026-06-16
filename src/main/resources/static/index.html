@@ -37,16 +37,9 @@
             margin-top: 8px;
         }
 
-        input {
-            padding: 8px;
-            margin: 4px 8px 8px 0;
-            min-width: 220px;
-        }
-
-        label {
-            display: inline-block;
-            margin-top: 8px;
-            margin-right: 8px;
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
         }
 
         table {
@@ -77,6 +70,12 @@
             margin-top: 12px;
             font-weight: bold;
         }
+
+        .detalle {
+            color: #555;
+            margin-top: 4px;
+            margin-bottom: 12px;
+        }
     </style>
 </head>
 
@@ -86,14 +85,14 @@
 
     <div class="panel">
         <h2>Estado técnico</h2>
-        <button onclick="consultarAppHealth()">Probar aplicación</button>
-        <button onclick="consultarDbHealth()">Probar DB</button>
+        <button id="btn-app-health">Probar aplicación</button>
+        <button id="btn-db-health">Probar DB</button>
         <pre id="estado">Sin consultar.</pre>
     </div>
 
     <div class="panel">
         <h2>Países</h2>
-        <button onclick="cargarPaises()">Cargar países desde DB</button>
+        <button id="btn-cargar-paises">Cargar países desde DB</button>
 
         <table>
             <thead>
@@ -112,143 +111,341 @@
     </div>
 
     <div class="panel">
-        <h2>Alta básica de usuario general</h2>
+        <h2>Autenticación Firebase</h2>
 
-        <div>
-            <input id="correo" placeholder="Correo" value="usuario3@demo.com">
-            <input id="password" placeholder="Contraseña" type="password" value="ClaveDemo123!">
+        <div class="detalle">
+            Este panel inicia sesión con Google usando Firebase Authentication,
+            obtiene un ID token real y lo envía al backend con el header
+            Authorization: Bearer &lt;token&gt;.
         </div>
 
-        <div>
-            <input id="paisDocumento" placeholder="País documento" value="URU">
-            <input id="tipoDocumento" placeholder="Tipo documento" value="CI">
-            <input id="numeroDocumento" placeholder="Número documento" value="11223344">
-        </div>
+        <button id="btn-login-google">Ingresar con Google</button>
+        <button id="btn-verificar-backend" disabled>Verificar token en backend</button>
+        <button id="btn-resolver-backend" disabled>Resolver usuario en backend</button>
+        <button id="btn-logout" disabled>Cerrar sesión</button>
 
-        <div>
-            <input id="paisDireccion" placeholder="País dirección" value="URU">
-            <input id="localidad" placeholder="Localidad" value="Montevideo">
-            <input id="calle" placeholder="Calle" value="18 de Julio">
-            <input id="numDireccion" placeholder="Número dirección" value="999">
-            <input id="codigoPostal" placeholder="Código postal" value="11100">
-        </div>
+        <div id="mensaje-auth" class="mensaje">Firebase Web SDK pendiente de inicializar.</div>
 
-        <button onclick="registrarUsuario()">Registrar usuario</button>
-        <div id="mensaje-alta-usuario" class="mensaje"></div>
+        <h3>Usuario Firebase actual</h3>
+        <pre id="usuario-firebase">No autenticado.</pre>
+
+        <h3>Respuesta del backend</h3>
+        <pre id="respuesta-backend">Sin verificar.</pre>
     </div>
 
-    <div class="panel">
-        <h2>Usuarios generales</h2>
-        <button onclick="cargarUsuarios()">Cargar usuarios desde DB</button>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import {
+            getAuth,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut,
+            onAuthStateChanged,
+            setPersistence,
+            inMemoryPersistence
+        } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Correo</th>
-                    <th>Documento</th>
-                    <th>Localidad</th>
-                    <th>Estado</th>
-                </tr>
-            </thead>
-            <tbody id="tabla-usuarios">
-                <tr>
-                    <td colspan="5">Sin datos cargados.</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
+        /*
+         * Config web pública de Firebase.
+         * Completar estos valores con los de Firebase Console -> Project settings -> General -> Apps web.
+         * No pegar acá service-account.json ni private_key.
+         */
+        const firebaseConfig = {
+            apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
+            authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
+            projectId: "dbii-ticketing-grupo6",
+            storageBucket: "dbii-ticketing-grupo6.firebasestorage.app",
+            messagingSenderId: "454622640345",
+            appId: "1:454622640345:web:af52e5c7e653c4373926c8"
+        };
 
-    <script>
+        const btnAppHealth = document.getElementById('btn-app-health');
+        const btnDbHealth = document.getElementById('btn-db-health');
+        const btnCargarPaises = document.getElementById('btn-cargar-paises');
+
+        const btnLoginGoogle = document.getElementById('btn-login-google');
+        const btnVerificarBackend = document.getElementById('btn-verificar-backend');
+        const btnResolverBackend = document.getElementById('btn-resolver-backend');
+        const btnLogout = document.getElementById('btn-logout');
+
+        const mensajeAuth = document.getElementById('mensaje-auth');
+
+        let auth = null;
+        let googleProvider = null;
+        let persistenceReady = null;
+
+        btnAppHealth.addEventListener('click', consultarAppHealth);
+        btnDbHealth.addEventListener('click', consultarDbHealth);
+        btnCargarPaises.addEventListener('click', cargarPaises);
+
+        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
+        btnVerificarBackend.addEventListener('click', verificarTokenEnBackend);
+        btnResolverBackend.addEventListener('click', resolverUsuarioEnBackend);
+        btnLogout.addEventListener('click', cerrarSesion);
+
+        inicializarFirebaseWeb();
+
+        function inicializarFirebaseWeb() {
+            if (!configFirebaseCompleta()) {
+                mensajeAuth.textContent =
+                    'Falta completar firebaseConfig en index.html con los valores públicos de Firebase.';
+                btnLoginGoogle.disabled = true;
+                return;
+            }
+
+            const app = initializeApp(firebaseConfig);
+
+            auth = getAuth(app);
+            auth.languageCode = 'es';
+
+            googleProvider = new GoogleAuthProvider();
+
+            /*
+             * Mantiene la autenticación en memoria.
+             * Si se recarga la página, la sesión Firebase del frontend se pierde.
+             * Es deliberado para esta demo: no guardamos token en localStorage.
+             */
+            persistenceReady = setPersistence(auth, inMemoryPersistence);
+
+            onAuthStateChanged(auth, usuario => {
+                if (usuario) {
+                    mensajeAuth.textContent = 'Autenticado con Firebase.';
+                    btnVerificarBackend.disabled = false;
+                    btnResolverBackend.disabled = false;
+                    btnLogout.disabled = false;
+
+                    mostrarJson('usuario-firebase', {
+                        uid: usuario.uid,
+                        email: usuario.email,
+                        emailVerified: usuario.emailVerified,
+                        name: usuario.displayName || null
+                    });
+                } else {
+                    mensajeAuth.textContent = 'No autenticado.';
+                    btnVerificarBackend.disabled = true;
+                    btnResolverBackend.disabled = true;
+                    btnLogout.disabled = true;
+
+                    mostrarTexto('usuario-firebase', 'No autenticado.');
+                    mostrarTexto('respuesta-backend', 'Sin verificar.');
+                }
+            });
+        }
+
+        function configFirebaseCompleta() {
+            return Object.values(firebaseConfig).every(valor =>
+                typeof valor === 'string'
+                && valor.trim() !== ''
+                && !valor.startsWith('PEGAR_')
+            );
+        }
+
         async function consultarAppHealth() {
-            const respuesta = await fetch('/app/health');
-            const datos = await respuesta.json();
-            mostrarEstado(datos);
+            try {
+                const respuesta = await fetch('/app/health');
+                const datos = await leerRespuesta(respuesta);
+                mostrarEstado(datos);
+            } catch (error) {
+                mostrarEstado({
+                    status: 'ERROR',
+                    message: 'No se pudo consultar /app/health',
+                    detail: error.message
+                });
+            }
         }
 
         async function consultarDbHealth() {
-            const respuesta = await fetch('/db/health');
-            const datos = await respuesta.json();
-            mostrarEstado(datos);
+            try {
+                const respuesta = await fetch('/db/health');
+                const datos = await leerRespuesta(respuesta);
+                mostrarEstado(datos);
+            } catch (error) {
+                mostrarEstado({
+                    status: 'ERROR',
+                    message: 'No se pudo consultar /db/health',
+                    detail: error.message
+                });
+            }
         }
 
         async function cargarPaises() {
-            const respuesta = await fetch('/paises');
-            const paises = await respuesta.json();
+            try {
+                const respuesta = await fetch('/paises');
+                const paises = await leerRespuesta(respuesta);
 
-            const tabla = document.getElementById('tabla-paises');
-            tabla.innerHTML = '';
+                const tabla = document.getElementById('tabla-paises');
+                tabla.innerHTML = '';
 
-            paises.forEach(pais => {
-                const fila = document.createElement('tr');
+                paises.forEach(pais => {
+                    const fila = document.createElement('tr');
 
-                fila.innerHTML = `
-                    <td>${pais.idPais}</td>
-                    <td>${pais.codigoIso}</td>
-                    <td>${pais.nombre}</td>
+                    fila.innerHTML = `
+                        <td>${pais.idPais}</td>
+                        <td>${pais.codigoIso}</td>
+                        <td>${pais.nombre}</td>
+                    `;
+
+                    tabla.appendChild(fila);
+                });
+            } catch (error) {
+                const tabla = document.getElementById('tabla-paises');
+                tabla.innerHTML = `
+                    <tr>
+                        <td colspan="3">Error al cargar países: ${error.message}</td>
+                    </tr>
                 `;
-
-                tabla.appendChild(fila);
-            });
+            }
         }
 
-        async function cargarUsuarios() {
-            const respuesta = await fetch('/usuarios');
-            const usuarios = await respuesta.json();
+        async function ingresarConGoogle() {
+            if (!auth || !googleProvider) {
+                mensajeAuth.textContent = 'Firebase Web SDK no está inicializado.';
+                return;
+            }
 
-            const tabla = document.getElementById('tabla-usuarios');
-            tabla.innerHTML = '';
+            try {
+                mensajeAuth.textContent = 'Abriendo login con Google...';
 
-            usuarios.forEach(usuario => {
-                const fila = document.createElement('tr');
+                await persistenceReady;
 
-                fila.innerHTML = `
-                    <td>${usuario.idUsuario}</td>
-                    <td>${usuario.correo}</td>
-                    <td>${usuario.tipoDocumento} ${usuario.numeroDocumento}</td>
-                    <td>${usuario.localidad}</td>
-                    <td>${usuario.estado}</td>
-                `;
+                const credencial = await signInWithPopup(auth, googleProvider);
+                const usuario = credencial.user;
 
-                tabla.appendChild(fila);
-            });
+                mensajeAuth.textContent = 'Login Google completado. Token disponible en memoria.';
+
+                mostrarJson('usuario-firebase', {
+                    uid: usuario.uid,
+                    email: usuario.email,
+                    emailVerified: usuario.emailVerified,
+                    name: usuario.displayName || null
+                });
+            } catch (error) {
+                mensajeAuth.textContent = 'Error durante el login con Google.';
+
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: error.code || null,
+                    message: error.message
+                });
+            }
         }
 
-        async function registrarUsuario() {
-            const usuario = {
-                correo: document.getElementById('correo').value,
-                password: document.getElementById('password').value,
-                paisDocumento: document.getElementById('paisDocumento').value,
-                tipoDocumento: document.getElementById('tipoDocumento').value,
-                numeroDocumento: document.getElementById('numeroDocumento').value,
-                paisDireccion: document.getElementById('paisDireccion').value,
-                localidad: document.getElementById('localidad').value,
-                calle: document.getElementById('calle').value,
-                numDireccion: document.getElementById('numDireccion').value,
-                codigoPostal: document.getElementById('codigoPostal').value
-            };
+        async function verificarTokenEnBackend() {
+            if (!auth || !auth.currentUser) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
 
-            const respuesta = await fetch('/usuarios', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(usuario)
-            });
+            try {
+                const idToken = await auth.currentUser.getIdToken();
 
-            const datos = await respuesta.json();
+                const respuesta = await fetch('/auth/firebase/me', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
 
-            document.getElementById('mensaje-alta-usuario').textContent =
-                datos.message || 'Respuesta recibida';
+                const datos = await leerRespuesta(respuesta);
 
-            if (respuesta.ok) {
-                await cargarUsuarios();
+                mostrarJson('respuesta-backend', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    message: 'No se pudo verificar el token en el backend.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function resolverUsuarioEnBackend() {
+            if (!auth || !auth.currentUser) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/auth/resolve', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-backend', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_AUTH_RESOLVE',
+                    message: 'No se pudo resolver el usuario en el backend.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function cerrarSesion() {
+            if (!auth) {
+                return;
+            }
+
+            try {
+                await signOut(auth);
+                mensajeAuth.textContent = 'Sesión cerrada.';
+                mostrarTexto('usuario-firebase', 'No autenticado.');
+                mostrarTexto('respuesta-backend', 'Sin verificar.');
+            } catch (error) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    message: 'No se pudo cerrar sesión.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function leerRespuesta(respuesta) {
+            const texto = await respuesta.text();
+
+            if (!texto) {
+                return null;
+            }
+
+            try {
+                return JSON.parse(texto);
+            } catch {
+                return texto;
             }
         }
 
         function mostrarEstado(datos) {
-            document.getElementById('estado').textContent =
+            mostrarJson('estado', datos);
+        }
+
+        function mostrarJson(idElemento, datos) {
+            document.getElementById(idElemento).textContent =
                 JSON.stringify(datos, null, 2);
+        }
+
+        function mostrarTexto(idElemento, texto) {
+            document.getElementById(idElemento).textContent = texto;
         }
     </script>
 </body>

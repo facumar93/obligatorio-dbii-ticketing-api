@@ -1,122 +1,95 @@
-\# Ticketing API - Obligatorio DBII
+# Ticketing API - Obligatorio DBII
 
+Sistema de ticketing para el Mundial 2026, desarrollado como obligatorio de Base de Datos II.
+El objetivo es modelar y soportar la comercializacion, transferencia y validacion de entradas para partidos.
 
+API minima construida con Spring Boot + JDBC explicito contra MySQL cloud, con autenticacion Firebase para identificar usuarios.
 
-Aplicación mínima para el obligatorio de Base de Datos II.
+## Stack
 
+- Java 21
+- Spring Boot
+- Maven Wrapper
+- JDBC explicito y SQL directo, sin ORM
+- MySQL cloud, schema `IC_Grupo6`
+- Firebase Authentication + Firebase Admin SDK
 
+## Configuracion requerida
 
-El proyecto usa:
+Las credenciales no estan incluidas en el repositorio.
 
+Para correr la aplicacion hay que definir estas variables de entorno:
 
+- `DB_URL`
+- `DB_USER`
+- `DB_PASSWORD`
+- `GOOGLE_APPLICATION_CREDENTIALS`
 
-\- Java 21
+`GOOGLE_APPLICATION_CREDENTIALS` debe apuntar al archivo `service-account.json` de Firebase Admin SDK. Ese archivo contiene una clave privada y debe mantenerse fuera del repo.
 
-\- Spring Boot
+## Como correr
 
-\- Maven Wrapper
+En Windows:
 
-\- JDBC explícito
+```powershell
+.\mvnw.cmd spring-boot:run
+```
 
-\- MySQL cloud provisto por la cátedra
+En Linux/macOS/Git Bash:
 
-\- Frontend HTML mínimo servido desde Spring Boot
+```bash
+./mvnw spring-boot:run
+```
 
+## Endpoints principales
 
+### Salud y catalogos
 
-\## Estado actual
+- `GET /app/health`
+- `GET /db/health`
+- `GET /paises`
+- `GET /tipos-documento`
 
+### Identidad
 
+- `GET /auth/firebase/me`
+  Verifica un token Firebase y devuelve la identidad del usuario autenticado.
 
-La aplicación fue adaptada para conectarse a la base MySQL cloud del grupo:
+- `POST /auth/resolve`
+  Resuelve la identidad Firebase contra `USUARIO_GENERAL`.
+  Puede devolver login correcto, vinculacion de usuario existente o indicar que requiere registro.
 
+- `POST /auth/register`
+  Registra un usuario autenticado por Firebase en `USUARIO_GENERAL`.
+  La identidad (`firebase_uid`, correo verificado) se toma del token, no del body.
 
+## Frontend minimo
 
-\- Schema/base: `IC\_Grupo6`
+La aplicacion sirve vistas HTML simples desde Spring Boot:
 
-\- Driver JDBC: MySQL Connector/J
+- `index.html`: pruebas de salud, catalogos y autenticacion Firebase.
+- `registro.html`: formulario de registro de usuario general.
 
-\- Variables de entorno:
+El registro valida en backend:
 
-&#x20; - `DB\_URL`
+- coherencia entre pais y tipo de documento;
+- formato basico de CI, DNI y pasaporte;
+- digito verificador de cedula uruguaya para `URY + CI`.
 
-&#x20; - `DB\_USER`
+## Seguridad
 
-&#x20; - `DB\_PASSWORD`
+Las claves publicas del Firebase Web SDK visibles en `index.html` y `registro.html` (`apiKey`, `authDomain`, `projectId`, `appId`) son identificadores de cliente, no secretos.
 
+La seguridad real se apoya en:
 
+- verificacion del ID token en backend mediante `FirebaseTokenVerifier`;
+- credenciales privadas de Firebase Admin fuera del repo;
+- variables de entorno para conexion a base de datos.
 
-El endpoint `/db/health` fue probado correctamente contra MySQL cloud y responde con conexión OK sobre `IC\_Grupo6`.
+No se debe subir `service-account.json`, `.env` ni credenciales de base de datos.
 
+## Estado legacy
 
+El flujo viejo de usuarios con password/BCrypt fue eliminado.
 
-\## Transición técnica realizada
-
-
-
-Originalmente el proyecto venía funcionando contra Db2 local en Ubuntu VirtualBox. Luego se adaptó a MySQL cloud.
-
-
-
-Cambios principales:
-
-
-
-\- Reemplazo del driver Db2 por `mysql-connector-j` en `pom.xml`.
-
-\- Cambio de `DbConnectionFactory` para usar variables genéricas:
-
-&#x20; - `DB\_URL`
-
-&#x20; - `DB\_USER`
-
-&#x20; - `DB\_PASSWORD`
-
-\- Cambio de `/db/health` para usar SQL compatible con MySQL:
-
-&#x20; - `SELECT 1 AS OK`
-
-\- Revisión del proyecto para eliminar referencias directas a Db2.
-
-\- Ajuste del manejo de errores de duplicado en `UsuarioController`, contemplando:
-
-&#x20; - Db2: SQLSTATE `23505`
-
-&#x20; - MySQL: SQLSTATE `23000` / error code `1062`
-
-\- Actualización de textos del frontend para hablar de “base de datos” en vez de Db2.
-
-
-
-\## Endpoints actuales
-
-
-
-\- `GET /app/health`
-
-\- `GET /db/health`
-
-\- `GET /paises`
-
-\- `GET /usuarios`
-
-\- `POST /usuarios`
-
-
-
-\## Situación actual con MySQL cloud
-
-
-
-Se creó correctamente la tabla `PAIS` en `IC\_Grupo6`.
-
-
-
-Al intentar crear `PAIS\_SEDE` con clave foránea hacia `PAIS`, MySQL devolvió:
-
-
-
-```text
-
-ERROR 1142 (42000): REFERENCES command denied to user 'ic\_g6\_admin'@'...' for table 'IC\_Grupo6.PAIS'
-
+`UsuarioController` y los endpoints `/usuarios` ya no forman parte del flujo actual. La autenticacion oficial pasa por Firebase y los endpoints `/auth/*`.

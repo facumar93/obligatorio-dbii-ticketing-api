@@ -3,175 +3,81 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Registro - Ticketing Mundial 2026</title>
-
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 32px;
-            background: #f5f5f5;
-            color: #222;
-        }
-
-        h1 {
-            margin-bottom: 4px;
-        }
-
-        .subtitulo {
-            color: #555;
-            margin-bottom: 24px;
-        }
-
-        .panel {
-            background: white;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 18px;
-        }
-
-        .detalle {
-            color: #555;
-            margin-top: 4px;
-            margin-bottom: 12px;
-        }
-
-        .campo {
-            margin-bottom: 12px;
-        }
-
-        label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 4px;
-        }
-
-        input,
-        select {
-            box-sizing: border-box;
-            width: 100%;
-            max-width: 520px;
-            padding: 8px;
-        }
-
-        button {
-            padding: 8px 12px;
-            cursor: pointer;
-            margin-right: 8px;
-            margin-top: 8px;
-        }
-
-        button:disabled,
-        fieldset:disabled {
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-
-        fieldset {
-            border: 0;
-            padding: 0;
-            margin: 0;
-        }
-
-        pre {
-            background: #222;
-            color: #eee;
-            padding: 12px;
-            overflow-x: auto;
-        }
-
-        .mensaje {
-            margin-top: 12px;
-            font-weight: bold;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Registro · Mundial 2026</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700&family=Archivo+Expanded:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/tokens.css">
+    <link rel="stylesheet" href="/assets/base.css">
+    <link rel="stylesheet" href="/assets/components.css">
 </head>
 
 <body>
-    <h1>Registro de usuario</h1>
-    <div class="subtitulo">Datos de dominio para Ticketing Mundial 2026</div>
+    <header class="topbar">
+        <a class="brand" href="/">MUNDIAL<b>26</b></a>
+        <nav><a class="navlink" href="/app.html">Ir a la app</a></nav>
+    </header>
 
-    <div class="panel">
-        <h2>Identidad Firebase</h2>
+    <main id="view">
+        <div class="wrap stack" style="max-width:680px">
+            <div>
+                <div class="kicker">Crear cuenta</div>
+                <h1>Registro de usuario</h1>
+                <p class="muted">Datos de dominio para operar en el ticketing del Mundial 2026.</p>
+            </div>
 
-        <div class="detalle">
-            Esta vista usa una sesión Firebase propia en memoria.
-            Primero ingresá con Google y después completá los datos de registro.
+            <div class="card stack">
+                <div class="kicker">Paso 1 · Identidad</div>
+                <p class="muted small">Ingresá con Google. Tu correo verificado queda asociado a la cuenta.</p>
+                <button id="btn-login-google" class="btn btn-accent">Ingresar con Google</button>
+                <div id="mensaje-auth" class="mensaje muted">No autenticado.</div>
+                <pre id="usuario-firebase">No autenticado.</pre>
+            </div>
+
+            <div class="card stack">
+                <div class="kicker">Paso 2 · Datos personales</div>
+                <form id="form-registro">
+                    <fieldset id="campos-registro" disabled>
+                        <div class="grid cols-2">
+                            <div class="field"><label for="nombre">Nombre</label><input id="nombre" name="nombre" required></div>
+                            <div class="field"><label for="apellido">Apellido</label><input id="apellido" name="apellido" required></div>
+                        </div>
+                        <div class="grid cols-2">
+                            <div class="field">
+                                <label for="id-tipo-documento">Tipo de documento</label>
+                                <select id="id-tipo-documento" name="id_tipo_documento" required><option value="">Seleccionar...</option></select>
+                            </div>
+                            <div class="field">
+                                <label for="id-pais-documento">País del documento</label>
+                                <select id="id-pais-documento" name="id_pais_documento" required><option value="">Seleccionar...</option></select>
+                            </div>
+                        </div>
+                        <div class="field"><label for="numero-documento">Número de documento</label><input id="numero-documento" name="numero_documento" required></div>
+                        <div class="hairline"></div>
+                        <div class="field">
+                            <label for="id-pais-direccion">País de dirección</label>
+                            <select id="id-pais-direccion" name="id_pais_direccion" required><option value="">Seleccionar...</option></select>
+                        </div>
+                        <div class="grid cols-2">
+                            <div class="field"><label for="localidad">Localidad</label><input id="localidad" name="localidad" required></div>
+                            <div class="field"><label for="codigo-postal">Código postal</label><input id="codigo-postal" name="codigo_postal" required></div>
+                        </div>
+                        <div class="grid cols-2">
+                            <div class="field"><label for="calle">Calle</label><input id="calle" name="calle" required></div>
+                            <div class="field"><label for="numero-direccion">Número</label><input id="numero-direccion" name="numero_direccion" required></div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Registrar usuario</button>
+                    </fieldset>
+                </form>
+            </div>
+
+            <div class="card stack">
+                <div class="kicker">Respuesta del backend</div>
+                <pre id="respuesta-backend">Sin enviar.</pre>
+            </div>
         </div>
-
-        <button id="btn-login-google">Ingresar con Google</button>
-        <div id="mensaje-auth" class="mensaje">No autenticado.</div>
-        <pre id="usuario-firebase">No autenticado.</pre>
-    </div>
-
-    <div class="panel">
-        <h2>Datos personales</h2>
-
-        <form id="form-registro">
-            <fieldset id="campos-registro" disabled>
-                <div class="campo">
-                    <label for="nombre">Nombre</label>
-                    <input id="nombre" name="nombre" required>
-                </div>
-
-                <div class="campo">
-                    <label for="apellido">Apellido</label>
-                    <input id="apellido" name="apellido" required>
-                </div>
-
-                <div class="campo">
-                    <label for="id-tipo-documento">Tipo de documento</label>
-                    <select id="id-tipo-documento" name="id_tipo_documento" required>
-                        <option value="">Seleccionar...</option>
-                    </select>
-                </div>
-
-                <div class="campo">
-                    <label for="id-pais-documento">País del documento</label>
-                    <select id="id-pais-documento" name="id_pais_documento" required>
-                        <option value="">Seleccionar...</option>
-                    </select>
-                </div>
-
-                <div class="campo">
-                    <label for="numero-documento">Número de documento</label>
-                    <input id="numero-documento" name="numero_documento" required>
-                </div>
-
-                <div class="campo">
-                    <label for="id-pais-direccion">País de dirección</label>
-                    <select id="id-pais-direccion" name="id_pais_direccion" required>
-                        <option value="">Seleccionar...</option>
-                    </select>
-                </div>
-
-                <div class="campo">
-                    <label for="localidad">Localidad</label>
-                    <input id="localidad" name="localidad" required>
-                </div>
-
-                <div class="campo">
-                    <label for="calle">Calle</label>
-                    <input id="calle" name="calle" required>
-                </div>
-
-                <div class="campo">
-                    <label for="numero-direccion">Número de dirección</label>
-                    <input id="numero-direccion" name="numero_direccion" required>
-                </div>
-
-                <div class="campo">
-                    <label for="codigo-postal">Código postal</label>
-                    <input id="codigo-postal" name="codigo_postal" required>
-                </div>
-
-                <button type="submit">Registrar usuario</button>
-            </fieldset>
-        </form>
-
-        <h3>Respuesta del backend</h3>
-        <pre id="respuesta-backend">Sin enviar.</pre>
-    </div>
+    </main>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
@@ -181,7 +87,7 @@
             signInWithPopup,
             onAuthStateChanged,
             setPersistence,
-            inMemoryPersistence
+            browserSessionPersistence
         } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
         const firebaseConfig = {
@@ -201,7 +107,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const googleProvider = new GoogleAuthProvider();
-        const persistenceReady = setPersistence(auth, inMemoryPersistence);
+        const persistenceReady = setPersistence(auth, browserSessionPersistence);
 
         auth.languageCode = 'es';
 
@@ -360,6 +266,12 @@
                     ok: respuesta.ok,
                     body: datos
                 });
+
+                if (respuesta.ok) {
+                    mensajeAuth.textContent = '¡Registro exitoso! Te llevamos a la app…';
+                    camposRegistro.disabled = true;
+                    setTimeout(() => { window.location.href = '/app.html'; }, 1300);
+                }
             } catch (error) {
                 mostrarJson('respuesta-backend', {
                     status: 'ERROR',
@@ -372,21 +284,12 @@
 
         async function leerRespuesta(respuesta) {
             const texto = await respuesta.text();
-
-            if (!texto) {
-                return null;
-            }
-
-            try {
-                return JSON.parse(texto);
-            } catch {
-                return texto;
-            }
+            if (!texto) return null;
+            try { return JSON.parse(texto); } catch { return texto; }
         }
 
         function mostrarJson(idElemento, datos) {
-            document.getElementById(idElemento).textContent =
-                JSON.stringify(datos, null, 2);
+            document.getElementById(idElemento).textContent = JSON.stringify(datos, null, 2);
         }
 
         function mostrarTexto(idElemento, texto) {

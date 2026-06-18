@@ -1,0 +1,77 @@
+/* ============================================================
+   Estadio Editorial — Design tokens (única fuente de verdad)
+   Mundial 2026 · Ticketing
+   ============================================================ */
+
+:root {
+    /* --- Tinta / superficies: base editorial casi-negra, no negro puro --- */
+    --ink-900: #0B0F14;   /* fondo de página */
+    --ink-850: #0E141B;
+    --ink-800: #11161D;   /* superficie elevada / cards */
+    --ink-700: #1A222C;   /* filas de tabla, inputs */
+    --ink-600: #28323E;   /* bordes, divisores */
+    --ink-500: #3A4654;
+
+    --paper:    #F4F6F4;  /* texto principal sobre oscuro */
+    --paper-dim:#AEB7BE;  /* texto secundario */
+    --paper-mut:#6F7A84;  /* texto terciario / placeholders */
+
+    /* --- Acentos signature --- */
+    --celeste: #2FD6E8;   /* acento primario (celeste eléctrico) */
+    --celeste-deep: #12A9BC;
+    --volt:    #C6FF3A;   /* acento secundario (verde eléctrico) — CTAs / "live" */
+    --volt-deep:#9FD400;
+    --magenta: #FF3D71;   /* destructivo / RECHAZADA / error */
+    --amber:   #FFB020;   /* PENDIENTE / advertencias */
+
+    /* --- Mapeo estado -> color (badges) --- */
+    --st-ok:   var(--volt);      /* CONFIRMADA / PAGA / ACEPTADA / EMITIDA / ACTIVA */
+    --st-warn: var(--amber);     /* PENDIENTE / RESERVADA */
+    --st-bad:  var(--magenta);   /* CANCELADA / RECHAZADA / ANULADA / EXPIRADA / BAJA */
+    --st-info: var(--celeste);   /* CONSUMIDA / informativo */
+
+    /* --- Tipografía --- */
+    --font-display: "Anton", system-ui, sans-serif;             /* mastheads, scoreboard, títulos */
+    --font-expanded: "Archivo Expanded", "Archivo", sans-serif; /* subtítulos */
+    --font-body: "Archivo", system-ui, sans-serif;              /* cuerpo / UI */
+
+    /* --- Escala de tipo (fluida, saltos grandes y editoriales) --- */
+    --fs-masthead: clamp(48px, 9vw, 120px);
+    --fs-h1: clamp(32px, 5vw, 64px);
+    --fs-h2: clamp(24px, 3vw, 38px);
+    --fs-h3: 20px;
+    --fs-body: 16px;
+    --fs-small: 13px;
+    --fs-tiny: 11px;
+    --fs-num: 18px;
+
+    /* --- Espaciado (base 8, generoso tipo revista) --- */
+    --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+    --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px;
+
+    /* --- Bordes / sombras: casi cuadrado, editorial --- */
+    --radius: 2px;
+    --radius-pill: 999px;
+    --border: 1px solid var(--ink-600);
+    --border-strong: 2px solid var(--ink-500);
+    --rule-bold: 3px solid var(--paper);
+    --shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+    --shadow-accent: 0 0 0 1px rgba(47, 214, 232, 0.25), 0 18px 50px -28px rgba(47, 214, 232, 0.4);
+
+    /* --- Layout --- */
+    --maxw: 1180px;
+    --nav-h: 64px;
+
+    /* --- Motion --- */
+    --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+    --fast: 120ms;
+    --med: 240ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}

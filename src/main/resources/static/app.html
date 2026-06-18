@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ticketing · Mundial 2026</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700&family=Archivo+Expanded:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/tokens.css">
+    <link rel="stylesheet" href="/assets/base.css">
+    <link rel="stylesheet" href="/assets/components.css">
+</head>
+
+<body>
+    <header class="topbar" id="topbar">
+        <a class="brand" href="#/eventos">MUNDIAL<b>26</b></a>
+        <nav id="nav"></nav>
+        <div class="who" id="who"></div>
+    </header>
+
+    <main id="view"></main>
+
+    <script type="module">
+        import { onUser, login, logout, currentUser } from "/js/firebase.js";
+        import { refreshSession, getSession, clearSession } from "/js/session.js";
+        import { startRouter, ROUTES, go } from "/js/router.js";
+        import { el, mount, clear, toast, toastError } from "/js/ui.js";
+
+        const nav = document.getElementById("nav");
+        const who = document.getElementById("who");
+        const view = document.getElementById("view");
+        let routerStarted = false;
+
+        function permitido(route, s) {
+            if (route.group === "admin") return s.esAdmin;
+            if (route.group === "validador") return s.esValidador;
+            return true;
+        }
+
+        function construirNav(session) {
+            clear(nav);
+            ROUTES.filter(r => r.nav && permitido(r, session)).forEach(r => {
+                const hash = "#/" + r.pattern;
+                nav.append(el("button", {
+                    class: "navlink" + (r.group === "admin" || r.group === "validador" ? " admin" : ""),
+                    text: r.label,
+                    dataset: { hash },
+                    onclick: () => go(hash)
+                }));
+            });
+        }
+
+        function construirWho(session) {
+            clear(who);
+            who.append(
+                el("span", { class: "email", text: session.email || "" }),
+                el("button", { class: "btn btn-ghost btn-sm", text: "Salir", onclick: () => logout() })
+            );
+        }
+
+        function pantallaLogin() {
+            clear(nav); clear(who);
+            mount(view, el("div", { class: "wrap gate" },
+                el("div", { class: "card gate-card stack" }, [
+                    el("div", { class: "kicker", text: "Mundial 2026 · Ticketing" }),
+                    el("div", { class: "masthead", text: "Tu entrada, viva." }),
+                    el("p", { class: "muted", text: "Comprá, transferí y validá entradas con identidad verificada." }),
+                    el("button", { class: "btn btn-accent", text: "Ingresar con Google", onclick: () => login().catch(toastError) })
+                ])
+            ));
+        }
+
+        function pantallaRegistro() {
+            clear(nav); construirWho({ email: currentUser()?.email });
+            mount(view, el("div", { class: "wrap gate" },
+                el("div", { class: "card gate-card stack" }, [
+                    el("div", { class: "kicker volt", text: "Falta un paso" }),
+                    el("div", { class: "h1", text: "Completá tu registro" }),
+                    el("p", { class: "muted", text: "Estás autenticado con Google pero todavía no tenés perfil en el sistema." }),
+                    el("a", { class: "btn btn-primary", href: "/registro.html", text: "Ir al registro" })
+                ])
+            ));
+        }
+
+        onUser(async (usuario) => {
+            if (!usuario) { clearSession(); pantallaLogin(); return; }
+
+            mount(view, el("div", { class: "wrap" }, el("div", { class: "stack" }, [
+                el("div", { class: "kicker", text: "Resolviendo identidad…" })
+            ])));
+
+            try {
+                const session = await refreshSession();
+                if (!session.registered) { pantallaRegistro(); return; }
+                construirNav(session);
+                construirWho(session);
+                if (!routerStarted) { startRouter(view); routerStarted = true; }
+                else go(location.hash || "#/eventos");
+            } catch (e) {
+                toastError(e);
+                pantallaLogin();
+            }
+        });
+    </script>
+</body>
+
+</html>

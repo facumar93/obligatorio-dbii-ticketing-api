@@ -95,8 +95,8 @@
         <h2>Identidad Firebase</h2>
 
         <div class="detalle">
-            Esta vista usa una sesión Firebase propia en memoria.
-            Primero ingresá con Google y después completá los datos de registro.
+            Esta vista usa la sesión Firebase persistida localmente en el navegador.
+            Si ya ingresaste con Google en otra pestaña, debería reconocerte automáticamente.
         </div>
 
         <button id="btn-login-google">Ingresar con Google</button>
@@ -181,7 +181,7 @@
             signInWithPopup,
             onAuthStateChanged,
             setPersistence,
-            inMemoryPersistence
+            browserLocalPersistence
         } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
         const firebaseConfig = {
@@ -201,7 +201,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const googleProvider = new GoogleAuthProvider();
-        const persistenceReady = setPersistence(auth, inMemoryPersistence);
+        const persistenceReady = setPersistence(auth, browserLocalPersistence);
 
         auth.languageCode = 'es';
 

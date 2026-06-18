@@ -133,6 +133,20 @@
         <pre id="respuesta-backend">Sin verificar.</pre>
     </div>
 
+    <div class="panel">
+        <h2>Catalogo de venta</h2>
+
+        <button id="btn-ver-catalogo" disabled>Ver eventos (catalogo)</button>
+
+        <div style="margin-top: 12px;">
+            <input id="id-evento-catalogo" type="number" min="1" placeholder="ID evento">
+            <button id="btn-detalle-evento" disabled>Ver detalle de evento</button>
+        </div>
+
+        <h3>Respuesta catalogo</h3>
+        <pre id="respuesta-catalogo">Sin consultar.</pre>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
         import {
@@ -142,7 +156,7 @@
             signOut,
             onAuthStateChanged,
             setPersistence,
-            inMemoryPersistence
+            browserLocalPersistence
         } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
         /*
@@ -167,6 +181,9 @@
         const btnVerificarBackend = document.getElementById('btn-verificar-backend');
         const btnResolverBackend = document.getElementById('btn-resolver-backend');
         const btnLogout = document.getElementById('btn-logout');
+        const btnVerCatalogo = document.getElementById('btn-ver-catalogo');
+        const btnDetalleEvento = document.getElementById('btn-detalle-evento');
+        const inputIdEventoCatalogo = document.getElementById('id-evento-catalogo');
 
         const mensajeAuth = document.getElementById('mensaje-auth');
 
@@ -182,6 +199,8 @@
         btnVerificarBackend.addEventListener('click', verificarTokenEnBackend);
         btnResolverBackend.addEventListener('click', resolverUsuarioEnBackend);
         btnLogout.addEventListener('click', cerrarSesion);
+        btnVerCatalogo.addEventListener('click', verCatalogoVentas);
+        btnDetalleEvento.addEventListener('click', verDetalleEvento);
 
         inicializarFirebaseWeb();
 
@@ -201,11 +220,11 @@
             googleProvider = new GoogleAuthProvider();
 
             /*
-             * Mantiene la autenticación en memoria.
-             * Si se recarga la página, la sesión Firebase del frontend se pierde.
-             * Es deliberado para esta demo: no guardamos token en localStorage.
+             * Mantiene la autenticación persistida localmente en el navegador.
+             * La sesión se comparte entre pestañas y puede sobrevivir al cierre del navegador.
+             * Para una demo en equipo, esto evita reloguearse en cada vista.
              */
-            persistenceReady = setPersistence(auth, inMemoryPersistence);
+            persistenceReady = setPersistence(auth, browserLocalPersistence);
 
             onAuthStateChanged(auth, usuario => {
                 if (usuario) {
@@ -213,6 +232,8 @@
                     btnVerificarBackend.disabled = false;
                     btnResolverBackend.disabled = false;
                     btnLogout.disabled = false;
+                    btnVerCatalogo.disabled = false;
+                    btnDetalleEvento.disabled = false;
 
                     mostrarJson('usuario-firebase', {
                         uid: usuario.uid,
@@ -225,9 +246,12 @@
                     btnVerificarBackend.disabled = true;
                     btnResolverBackend.disabled = true;
                     btnLogout.disabled = true;
+                    btnVerCatalogo.disabled = true;
+                    btnDetalleEvento.disabled = true;
 
                     mostrarTexto('usuario-firebase', 'No autenticado.');
                     mostrarTexto('respuesta-backend', 'Sin verificar.');
+                    mostrarTexto('respuesta-catalogo', 'Sin consultar.');
                 }
             });
         }
@@ -311,7 +335,7 @@
                 const credencial = await signInWithPopup(auth, googleProvider);
                 const usuario = credencial.user;
 
-                mensajeAuth.textContent = 'Login Google completado. Token disponible en memoria.';
+                mensajeAuth.textContent = 'Login Google completado. Sesión persistida localmente.';
 
                 mostrarJson('usuario-firebase', {
                     uid: usuario.uid,
@@ -402,6 +426,91 @@
             }
         }
 
+        async function verCatalogoVentas() {
+            if (!auth || !auth.currentUser) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/ventas/catalogo', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-catalogo', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_VENTAS_CATALOGO',
+                    message: 'No se pudo consultar el catalogo de ventas.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function verDetalleEvento() {
+            if (!auth || !auth.currentUser) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            const idEvento = inputIdEventoCatalogo.value.trim();
+
+            if (!idEvento) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'ID_EVENTO_REQUERIDO',
+                    message: 'Ingresa un id de evento.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch(`/ventas/catalogo/${idEvento}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-catalogo', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_VENTAS_CATALOGO_DETALLE',
+                    message: 'No se pudo consultar el detalle del evento.',
+                    detail: error.message
+                });
+            }
+        }
+
         async function cerrarSesion() {
             if (!auth) {
                 return;
@@ -412,6 +521,7 @@
                 mensajeAuth.textContent = 'Sesión cerrada.';
                 mostrarTexto('usuario-firebase', 'No autenticado.');
                 mostrarTexto('respuesta-backend', 'Sin verificar.');
+                mostrarTexto('respuesta-catalogo', 'Sin consultar.');
             } catch (error) {
                 mostrarJson('respuesta-backend', {
                     status: 'ERROR',

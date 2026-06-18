@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Compra - Ticketing Mundial 2026</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 32px;
+            background: #f5f5f5;
+            color: #222;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .subtitulo {
+            color: #555;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+
+        .detalle {
+            color: #555;
+            margin-top: 4px;
+            margin-bottom: 12px;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+
+        button:disabled,
+        input:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        input {
+            padding: 8px;
+            max-width: 110px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 12px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        th {
+            background: #eee;
+            text-align: left;
+        }
+
+        pre {
+            background: #222;
+            color: #eee;
+            padding: 12px;
+            overflow-x: auto;
+        }
+
+        .mensaje {
+            margin-top: 12px;
+            font-weight: bold;
+        }
+
+        .total {
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Compra de entradas</h1>
+    <div class="subtitulo">Ticketing Mundial 2026</div>
+
+    <div class="panel">
+        <h2>Identidad Firebase</h2>
+
+        <div class="detalle">
+            Esta vista usa la sesion Firebase persistida localmente en el navegador.
+            Si ya ingresaste con Google en otra pestana, deberia reconocerte automaticamente.
+        </div>
+
+        <button id="btn-login-google">Ingresar con Google</button>
+        <div id="mensaje-auth" class="mensaje">No autenticado.</div>
+        <pre id="usuario-firebase">No autenticado.</pre>
+    </div>
+
+    <div class="panel">
+        <h2>Eventos disponibles</h2>
+        <button id="btn-recargar-eventos" disabled>Recargar eventos</button>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Fecha</th>
+                    <th>Local</th>
+                    <th>Visitante</th>
+                    <th>Estadio</th>
+                    <th>Ciudad</th>
+                    <th>Accion</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-eventos">
+                <tr>
+                    <td colspan="7">Sin eventos cargados.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Sectores del evento</h2>
+        <div id="evento-seleccionado" class="detalle">Selecciona un evento.</div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Sector</th>
+                    <th>Precio</th>
+                    <th>Cupo disponible</th>
+                    <th>Cantidad</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-sectores">
+                <tr>
+                    <td colspan="4">Sin evento seleccionado.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="total">Total estimado: <span id="total-estimado">0.00</span></div>
+        <div class="detalle">
+            El total es estimado. El backend revalida cupo, tasa y monto al crear la venta.
+        </div>
+
+        <button id="btn-comprar" disabled>Comprar</button>
+    </div>
+
+    <div class="panel">
+        <h2>Resultado</h2>
+        <pre id="respuesta-compra">Sin compra.</pre>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import {
+            getAuth,
+            GoogleAuthProvider,
+            signInWithPopup,
+            onAuthStateChanged,
+            setPersistence,
+            browserLocalPersistence
+        } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
+            authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
+            projectId: "dbii-ticketing-grupo6",
+            storageBucket: "dbii-ticketing-grupo6.firebasestorage.app",
+            messagingSenderId: "454622640345",
+            appId: "1:454622640345:web:af52e5c7e653c4373926c8"
+        };
+
+        const btnLoginGoogle = document.getElementById('btn-login-google');
+        const btnRecargarEventos = document.getElementById('btn-recargar-eventos');
+        const btnComprar = document.getElementById('btn-comprar');
+
+        const mensajeAuth = document.getElementById('mensaje-auth');
+        const tablaEventos = document.getElementById('tabla-eventos');
+        const tablaSectores = document.getElementById('tabla-sectores');
+        const eventoSeleccionado = document.getElementById('evento-seleccionado');
+        const totalEstimado = document.getElementById('total-estimado');
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+        const persistenceReady = setPersistence(auth, browserLocalPersistence);
+
+        let eventoActual = null;
+        let sectoresActuales = [];
+        let compraEnCurso = false;
+
+        auth.languageCode = 'es';
+
+        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
+        btnRecargarEventos.addEventListener('click', cargarEventos);
+        btnComprar.addEventListener('click', comprar);
+
+        onAuthStateChanged(auth, async usuario => {
+            reiniciarCompra();
+
+            if (!usuario) {
+                mensajeAuth.textContent = 'No autenticado.';
+                btnRecargarEventos.disabled = true;
+                btnComprar.disabled = true;
+                mostrarTexto('usuario-firebase', 'No autenticado.');
+                return;
+            }
+
+            mensajeAuth.textContent = 'Autenticado. Cargando eventos...';
+            btnRecargarEventos.disabled = false;
+
+            mostrarJson('usuario-firebase', {
+                uid: usuario.uid,
+                email: usuario.email,
+                emailVerified: usuario.emailVerified,
+                name: usuario.displayName || null
+            });
+
+            try {
+                await cargarEventos();
+                mensajeAuth.textContent = 'Autenticado. Elegi un evento para comprar.';
+            } catch (error) {
+                mensajeAuth.textContent = 'No se pudieron cargar los eventos.';
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: 'ERROR_CARGA_EVENTOS',
+                    message: error.message
+                });
+            }
+        });
+
+        async function ingresarConGoogle() {
+            try {
+                mensajeAuth.textContent = 'Abriendo login con Google...';
+                await persistenceReady;
+                await signInWithPopup(auth, googleProvider);
+            } catch (error) {
+                mensajeAuth.textContent = 'Error durante el login con Google.';
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: error.code || null,
+                    message: error.message
+                });
+            }
+        }
+
+        async function cargarEventos() {
+            const idToken = await obtenerTokenActual();
+
+            const respuesta = await fetch('/ventas/catalogo', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${idToken}`
+                }
+            });
+
+            const eventos = await leerRespuesta(respuesta);
+
+            if (!respuesta.ok || !Array.isArray(eventos)) {
+                throw new Error('No se pudo cargar el catalogo de eventos');
+            }
+
+            renderizarEventos(eventos);
+        }
+
+        function renderizarEventos(eventos) {
+            tablaEventos.innerHTML = '';
+
+            if (eventos.length === 0) {
+                tablaEventos.innerHTML = `
+                    <tr>
+                        <td colspan="7">No hay eventos disponibles.</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            eventos.forEach(evento => {
+                const fila = document.createElement('tr');
+                fila.innerHTML = `
+                    <td>${evento.idEvento}</td>
+                    <td>${evento.fechaHoraInicio}</td>
+                    <td>${evento.seleccionLocal}</td>
+                    <td>${evento.seleccionVisitante}</td>
+                    <td>${evento.estadio}</td>
+                    <td>${evento.ciudad}</td>
+                    <td><button type="button">Seleccionar</button></td>
+                `;
+
+                fila.querySelector('button').addEventListener('click', () => seleccionarEvento(evento.idEvento));
+                tablaEventos.appendChild(fila);
+            });
+        }
+
+        async function seleccionarEvento(idEvento) {
+            try {
+                const idToken = await obtenerTokenActual();
+
+                const respuesta = await fetch(`/ventas/catalogo/${idEvento}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const evento = await leerRespuesta(respuesta);
+
+                if (!respuesta.ok) {
+                    mostrarJson('respuesta-compra', {
+                        httpStatus: respuesta.status,
+                        ok: respuesta.ok,
+                        body: evento
+                    });
+                    return;
+                }
+
+                eventoActual = evento;
+                sectoresActuales = evento.sectores || [];
+                renderizarSectores();
+                mostrarTexto('respuesta-compra', 'Evento seleccionado. Carga cantidades y presiona Comprar.');
+            } catch (error) {
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: 'ERROR_DETALLE_EVENTO',
+                    message: 'No se pudo cargar el detalle del evento.',
+                    detail: error.message
+                });
+            }
+        }
+
+        function renderizarSectores() {
+            eventoSeleccionado.textContent =
+                `${eventoActual.seleccionLocal} vs ${eventoActual.seleccionVisitante} - ${eventoActual.estadio}`;
+
+            tablaSectores.innerHTML = '';
+
+            if (sectoresActuales.length === 0) {
+                tablaSectores.innerHTML = `
+                    <tr>
+                        <td colspan="4">El evento no tiene sectores habilitados.</td>
+                    </tr>
+                `;
+                btnComprar.disabled = true;
+                return;
+            }
+
+            sectoresActuales.forEach(sector => {
+                const fila = document.createElement('tr');
+                const maximoSector = Math.max(0, Number(sector.cupoDisponible || 0));
+
+                fila.innerHTML = `
+                    <td>${sector.nombreSector}</td>
+                    <td>${formatearDinero(sector.precioEntrada)}</td>
+                    <td>${sector.cupoDisponible}</td>
+                    <td>
+                        <input
+                            type="number"
+                            min="0"
+                            max="${maximoSector}"
+                            value="0"
+                            data-id-sector="${sector.idSector}">
+                    </td>
+                `;
+
+                fila.querySelector('input').addEventListener('input', recalcularTotal);
+                tablaSectores.appendChild(fila);
+            });
+
+            recalcularTotal();
+        }
+
+        function recalcularTotal() {
+            let totalCantidad = 0;
+            let total = 0;
+
+            obtenerLineasSeleccionadas(false).forEach(linea => {
+                totalCantidad += linea.cantidad;
+                total += linea.precioEntrada * linea.cantidad;
+            });
+
+            totalEstimado.textContent = formatearDinero(total);
+            btnComprar.disabled = compraEnCurso || totalCantidad <= 0 || totalCantidad > 5;
+
+            if (totalCantidad > 5) {
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: 'MAXIMO_5_POR_VENTA',
+                    message: 'La compra no puede superar 5 entradas en total.'
+                });
+            }
+        }
+
+        async function comprar() {
+            if (compraEnCurso) {
+                return;
+            }
+
+            if (!eventoActual) {
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: 'EVENTO_REQUERIDO',
+                    message: 'Selecciona un evento antes de comprar.'
+                });
+                return;
+            }
+
+            const lineas = obtenerLineasSeleccionadas(true);
+            const totalCantidad = lineas.reduce((total, linea) => total + linea.cantidad, 0);
+
+            if (lineas.length === 0 || totalCantidad === 0) {
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: 'SIN_CANTIDADES',
+                    message: 'Ingresa al menos una cantidad para comprar.'
+                });
+                return;
+            }
+
+            if (totalCantidad > 5) {
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: 'MAXIMO_5_POR_VENTA',
+                    message: 'La compra no puede superar 5 entradas en total.'
+                });
+                return;
+            }
+
+            compraEnCurso = true;
+            btnComprar.disabled = true;
+
+            try {
+                const idToken = await obtenerTokenActual();
+
+                const respuesta = await fetch('/ventas', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        idEvento: eventoActual.idEvento,
+                        lineas: lineas.map(linea => ({
+                            idSector: linea.idSector,
+                            cantidad: linea.cantidad
+                        }))
+                    })
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-compra', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos,
+                    siguientePaso: respuesta.ok ? 'Venta pendiente creada. Proximo paso: pago.' : null
+                });
+
+                if (!respuesta.ok) {
+                    compraEnCurso = false;
+                    recalcularTotal();
+                }
+            } catch (error) {
+                compraEnCurso = false;
+                recalcularTotal();
+
+                mostrarJson('respuesta-compra', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_CREAR_VENTA',
+                    message: 'No se pudo crear la venta pendiente.',
+                    detail: error.message
+                });
+            }
+        }
+
+        function obtenerLineasSeleccionadas(soloPositivas) {
+            const inputs = tablaSectores.querySelectorAll('input[data-id-sector]');
+            const lineas = [];
+
+            inputs.forEach(input => {
+                const idSector = Number(input.dataset.idSector);
+                const cantidad = Number(input.value || 0);
+                const sector = sectoresActuales.find(item => item.idSector === idSector);
+
+                if (!sector) {
+                    return;
+                }
+
+                if (soloPositivas && cantidad <= 0) {
+                    return;
+                }
+
+                lineas.push({
+                    idSector,
+                    cantidad: Number.isFinite(cantidad) ? cantidad : 0,
+                    precioEntrada: Number(sector.precioEntrada)
+                });
+            });
+
+            return lineas;
+        }
+
+        async function obtenerTokenActual() {
+            if (!auth.currentUser) {
+                throw new Error('No hay usuario autenticado en Firebase');
+            }
+
+            return auth.currentUser.getIdToken();
+        }
+
+        function reiniciarCompra() {
+            eventoActual = null;
+            sectoresActuales = [];
+            compraEnCurso = false;
+
+            tablaSectores.innerHTML = `
+                <tr>
+                    <td colspan="4">Sin evento seleccionado.</td>
+                </tr>
+            `;
+            eventoSeleccionado.textContent = 'Selecciona un evento.';
+            totalEstimado.textContent = '0.00';
+            btnComprar.disabled = true;
+            mostrarTexto('respuesta-compra', 'Sin compra.');
+        }
+
+        async function leerRespuesta(respuesta) {
+            const texto = await respuesta.text();
+
+            if (!texto) {
+                return null;
+            }
+
+            try {
+                return JSON.parse(texto);
+            } catch {
+                return texto;
+            }
+        }
+
+        function formatearDinero(valor) {
+            const numero = Number(valor || 0);
+            return numero.toFixed(2);
+        }
+
+        function mostrarJson(idElemento, datos) {
+            document.getElementById(idElemento).textContent =
+                JSON.stringify(datos, null, 2);
+        }
+
+        function mostrarTexto(idElemento, texto) {
+            document.getElementById(idElemento).textContent = texto;
+        }
+    </script>
+</body>
+
+</html>

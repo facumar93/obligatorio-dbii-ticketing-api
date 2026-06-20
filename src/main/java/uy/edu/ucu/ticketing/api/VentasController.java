@@ -14,11 +14,13 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -34,6 +36,7 @@ public class VentasController {
     private static final int MAXIMO_ENTRADAS_POR_VENTA = 5;
     private static final int MINUTOS_EXPIRACION_VENTA = 15;
     private static final int ESCALA_DINERO = 2;
+    private static final int MAXIMO_LARGO_REFERENCIA_PAGO = 100;
 
     @PostMapping("/ventas")
     public ResponseEntity<Map<String, Object>> crearVentaPendiente(
@@ -203,6 +206,163 @@ public class VentasController {
         }
     }
 
+    @PostMapping("/ventas/{idVenta}/pagar")
+    public ResponseEntity<Map<String, Object>> pagarVenta(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable("idVenta") int idVenta,
+            @RequestBody(required = false) PagarVentaRequest request) {
+
+        VerifiedFirebaseToken token;
+
+        try {
+            token = FirebaseTokenVerifier.verifyAuthorizationHeader(authorizationHeader);
+        } catch (InvalidAuthorizationException e) {
+            return respuestaNoAutorizada(e.getCode(), e.getMessage());
+        }
+
+        String errorInput = validarInputPago(idVenta, request);
+
+        if (errorInput != null) {
+            Map<String, Object> respuesta = respuestaBase("ERROR", "INPUT_INVALIDO");
+            respuesta.put("message", errorInput);
+
+            return ResponseEntity.badRequest().body(respuesta);
+        }
+
+        String metodoPago = normalizarCodigo(request.metodoPago);
+        String resultadoPasarela = simularResultadoPago(request.resultadoSimulado);
+        String referenciaPago = normalizarReferenciaPago(request.referenciaPago);
+
+        try (Connection connection = DbConnectionFactory.getConnection()) {
+            Integer idComprador = buscarIdUsuarioPorFirebaseUid(connection, token.uid());
+
+            if (idComprador == null) {
+                Map<String, Object> respuesta = respuestaBase("ERROR", "USUARIO_NO_REGISTRADO");
+                respuesta.put("message", "El usuario autenticado no existe en USUARIO_GENERAL");
+
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(respuesta);
+            }
+
+            connection.setAutoCommit(false);
+
+            try {
+                VentaParaPago venta = bloquearVentaParaPago(connection, idVenta);
+
+                if (venta == null) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "VENTA_NO_ENCONTRADA");
+                    respuesta.put("message", "La venta no existe");
+
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(respuesta);
+                }
+
+                if (venta.idUsuarioComprador() != idComprador) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "VENTA_NO_AUTORIZADA");
+                    respuesta.put("message", "La venta no pertenece al usuario autenticado");
+
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(respuesta);
+                }
+
+                if (!"PENDIENTE".equals(venta.estadoVenta())) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "VENTA_NO_PENDIENTE");
+                    respuesta.put("message", "La venta no esta pendiente de pago");
+                    respuesta.put("estadoVenta", venta.estadoVenta());
+
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(respuesta);
+                }
+
+                if (venta.vencida()) {
+                    cancelarVentaExpirada(connection, idVenta);
+                    expirarReservas(connection, idVenta);
+                    connection.commit();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "VENTA_EXPIRADA");
+                    respuesta.put("message", "La venta expiro y sus reservas fueron liberadas");
+                    respuesta.put("idVenta", idVenta);
+                    respuesta.put("estadoVenta", "CANCELADA");
+
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(respuesta);
+                }
+
+                int idIntentoPago = insertarIntentoPago(
+                        connection,
+                        idVenta,
+                        venta.montoTotal(),
+                        resultadoPasarela,
+                        referenciaPago,
+                        metodoPago
+                );
+
+                if ("RECHAZADO".equals(resultadoPasarela)) {
+                    connection.commit();
+
+                    Map<String, Object> respuesta = respuestaBase("OK", "PAGO_RECHAZADO");
+                    respuesta.put("idVenta", idVenta);
+                    respuesta.put("idIntentoPago", idIntentoPago);
+                    respuesta.put("estadoVenta", "PENDIENTE");
+                    respuesta.put("estadoPago", "RECHAZADO");
+
+                    return ResponseEntity.ok(respuesta);
+                }
+
+                actualizarVentaPaga(connection, idVenta);
+
+                List<ReservaParaEmitir> reservas = buscarReservasParaEmitir(connection, idVenta);
+
+                if (reservas.isEmpty()) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "VENTA_SIN_RESERVAS");
+                    respuesta.put("message", "La venta no tiene reservas emitibles");
+
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(respuesta);
+                }
+
+                marcarReservasEmitidas(connection, idVenta);
+
+                int entradasEmitidas = 0;
+
+                for (ReservaParaEmitir reserva : reservas) {
+                    for (int i = 0; i < reserva.cantidad(); i++) {
+                        int idEntrada = insertarEntrada(connection, reserva.idReservaPorVenta());
+                        insertarMovimientoCompraInicial(connection, idEntrada, idComprador);
+                        entradasEmitidas++;
+                    }
+                }
+
+                connection.commit();
+
+                Map<String, Object> respuesta = respuestaBase("OK", "PAGO_APROBADO");
+                respuesta.put("idVenta", idVenta);
+                respuesta.put("idIntentoPago", idIntentoPago);
+                respuesta.put("estadoVenta", "PAGA");
+                respuesta.put("estadoPago", "APROBADO");
+                respuesta.put("entradasEmitidas", entradasEmitidas);
+
+                return ResponseEntity.ok(respuesta);
+
+            } catch (SQLException e) {
+                rollbackSilencioso(connection);
+
+                Map<String, Object> respuesta = respuestaBase("ERROR", "ERROR_DB_PAGAR_VENTA");
+                respuesta.put("message", "No se pudo procesar el pago de la venta");
+
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(respuesta);
+            }
+
+        } catch (SQLException | IllegalStateException e) {
+            Map<String, Object> respuesta = respuestaBase("ERROR", "ERROR_DB_CONNECTION");
+            respuesta.put("message", "No se pudo abrir la conexion a la base de datos");
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(respuesta);
+        }
+    }
+
     private static String validarInput(CrearVentaRequest request) {
         if (request == null) {
             return "El body de la venta es obligatorio";
@@ -237,6 +397,72 @@ public class VentasController {
         }
 
         return null;
+    }
+
+    private static String validarInputPago(int idVenta, PagarVentaRequest request) {
+        if (idVenta <= 0) {
+            return "idVenta debe ser mayor a cero";
+        }
+
+        if (request == null) {
+            return "El body del pago es obligatorio";
+        }
+
+        String metodoPago = normalizarCodigo(request.metodoPago);
+
+        if (!esMetodoPagoValido(metodoPago)) {
+            return "metodoPago debe ser TARJETA_CREDITO, TARJETA_DEBITO o TRANSFERENCIA";
+        }
+
+        String resultadoSimulado = normalizarCodigo(request.resultadoSimulado);
+
+        if (!esResultadoPagoValido(resultadoSimulado)) {
+            return "resultadoSimulado debe ser APROBADO o RECHAZADO";
+        }
+
+        String referenciaPago = normalizarReferenciaPago(request.referenciaPago);
+
+        if (referenciaPago != null && referenciaPago.length() > MAXIMO_LARGO_REFERENCIA_PAGO) {
+            return "referenciaPago no puede superar 100 caracteres";
+        }
+
+        return null;
+    }
+
+    private static boolean esMetodoPagoValido(String metodoPago) {
+        return "TARJETA_CREDITO".equals(metodoPago)
+                || "TARJETA_DEBITO".equals(metodoPago)
+                || "TRANSFERENCIA".equals(metodoPago);
+    }
+
+    private static boolean esResultadoPagoValido(String resultadoPago) {
+        return "APROBADO".equals(resultadoPago) || "RECHAZADO".equals(resultadoPago);
+    }
+
+    private static String normalizarCodigo(String valor) {
+        if (valor == null) {
+            return "";
+        }
+
+        return valor.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizarReferenciaPago(String referenciaPago) {
+        if (referenciaPago == null) {
+            return null;
+        }
+
+        String referenciaNormalizada = referenciaPago.trim();
+
+        if (referenciaNormalizada.isEmpty()) {
+            return null;
+        }
+
+        return referenciaNormalizada;
+    }
+
+    private static String simularResultadoPago(String resultadoSimulado) {
+        return normalizarCodigo(resultadoSimulado);
     }
 
     private static Integer buscarIdUsuarioPorFirebaseUid(Connection connection, String firebaseUid) throws SQLException {
@@ -461,6 +687,221 @@ public class VentasController {
         }
     }
 
+    private static VentaParaPago bloquearVentaParaPago(Connection connection, int idVenta) throws SQLException {
+        String sql = """
+                SELECT
+                    id_venta,
+                    id_usuario_comprador,
+                    estado_venta,
+                    fecha_expiracion,
+                    monto_total,
+                    CASE
+                        WHEN fecha_expiracion <= NOW() THEN 1
+                        ELSE 0
+                    END AS vencida
+                FROM VENTA
+                WHERE id_venta = ?
+                FOR UPDATE
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idVenta);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return null;
+                }
+
+                return new VentaParaPago(
+                        resultSet.getInt("id_venta"),
+                        resultSet.getInt("id_usuario_comprador"),
+                        resultSet.getString("estado_venta"),
+                        resultSet.getTimestamp("fecha_expiracion"),
+                        resultSet.getBigDecimal("monto_total"),
+                        resultSet.getInt("vencida") == 1
+                );
+            }
+        }
+    }
+
+    private static void cancelarVentaExpirada(Connection connection, int idVenta) throws SQLException {
+        String sql = """
+                UPDATE VENTA
+                SET estado_venta = 'CANCELADA'
+                WHERE id_venta = ?
+                  AND estado_venta = 'PENDIENTE'
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idVenta);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void expirarReservas(Connection connection, int idVenta) throws SQLException {
+        String sql = """
+                UPDATE RESERVA_POR_VENTA
+                SET estado_reserva = 'EXPIRADA'
+                WHERE id_venta = ?
+                  AND estado_reserva = 'RESERVADA'
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idVenta);
+            statement.executeUpdate();
+        }
+    }
+
+    private static int insertarIntentoPago(
+            Connection connection,
+            int idVenta,
+            BigDecimal montoPago,
+            String estadoPago,
+            String referenciaPago,
+            String metodoPago
+    ) throws SQLException {
+
+        String sql = """
+                INSERT INTO INTENTO_PAGO (
+                    id_venta,
+                    fecha_hora_pago,
+                    monto_pago,
+                    estado_pago,
+                    referencia_pago,
+                    metodo_pago
+                )
+                VALUES (?, NOW(), ?, ?, ?, ?)
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            statement.setInt(1, idVenta);
+            statement.setBigDecimal(2, montoPago);
+            statement.setString(3, estadoPago);
+            statement.setString(4, referenciaPago);
+            statement.setString(5, metodoPago);
+            statement.executeUpdate();
+
+            try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
+                if (!generatedKeys.next()) {
+                    throw new SQLException("No se pudo obtener el id generado del intento de pago");
+                }
+
+                return generatedKeys.getInt(1);
+            }
+        }
+    }
+
+    private static void actualizarVentaPaga(Connection connection, int idVenta) throws SQLException {
+        String sql = """
+                UPDATE VENTA
+                SET estado_venta = 'PAGA'
+                WHERE id_venta = ?
+                  AND estado_venta = 'PENDIENTE'
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idVenta);
+            statement.executeUpdate();
+        }
+    }
+
+    private static List<ReservaParaEmitir> buscarReservasParaEmitir(Connection connection, int idVenta)
+            throws SQLException {
+
+        String sql = """
+                SELECT id_reserva_por_venta, cantidad
+                FROM RESERVA_POR_VENTA
+                WHERE id_venta = ?
+                  AND estado_reserva = 'RESERVADA'
+                ORDER BY id_reserva_por_venta
+                FOR UPDATE
+                """;
+
+        List<ReservaParaEmitir> reservas = new ArrayList<>();
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idVenta);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    reservas.add(new ReservaParaEmitir(
+                            resultSet.getInt("id_reserva_por_venta"),
+                            resultSet.getInt("cantidad")
+                    ));
+                }
+            }
+        }
+
+        return reservas;
+    }
+
+    private static void marcarReservasEmitidas(Connection connection, int idVenta) throws SQLException {
+        String sql = """
+                UPDATE RESERVA_POR_VENTA
+                SET estado_reserva = 'EMITIDA'
+                WHERE id_venta = ?
+                  AND estado_reserva = 'RESERVADA'
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idVenta);
+            statement.executeUpdate();
+        }
+    }
+
+    private static int insertarEntrada(Connection connection, int idReservaPorVenta) throws SQLException {
+        String sql = """
+                INSERT INTO ENTRADA (
+                    id_reserva_por_venta,
+                    estado_entrada,
+                    fecha_emision
+                )
+                VALUES (?, 'EMITIDA', NOW())
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            statement.setInt(1, idReservaPorVenta);
+            statement.executeUpdate();
+
+            try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
+                if (!generatedKeys.next()) {
+                    throw new SQLException("No se pudo obtener el id generado de la entrada");
+                }
+
+                return generatedKeys.getInt(1);
+            }
+        }
+    }
+
+    private static void insertarMovimientoCompraInicial(
+            Connection connection,
+            int idEntrada,
+            int idComprador
+    ) throws SQLException {
+
+        String sql = """
+                INSERT INTO MOVIMIENTO_ASIGNACION_ENTRADA (
+                    id_entrada,
+                    nro_movimiento,
+                    id_usuario_titular_origen,
+                    id_usuario_destinatario,
+                    tipo_movimiento,
+                    estado_movimiento,
+                    fecha_solicitud,
+                    fecha_respuesta,
+                    fecha_desde,
+                    fecha_hasta
+                )
+                VALUES (?, 1, ?, NULL, 'COMPRA_INICIAL', 'CONFIRMADA', NOW(), NOW(), NOW(), NULL)
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idEntrada);
+            statement.setInt(2, idComprador);
+            statement.executeUpdate();
+        }
+    }
+
     private static ResponseEntity<Map<String, Object>> respuestaNoAutorizada(String code, String mensaje) {
         Map<String, Object> respuesta = respuestaBase("ERROR", code);
         respuesta.put("message", mensaje);
@@ -502,6 +943,12 @@ public class VentasController {
         public Integer cantidad;
     }
 
+    public static class PagarVentaRequest {
+        public String metodoPago;
+        public String referenciaPago;
+        public String resultadoSimulado;
+    }
+
     private record EventoSectorBloqueado(
             int idSector,
             BigDecimal precioEntrada,
@@ -519,6 +966,22 @@ public class VentasController {
             int idSector,
             int cantidad,
             BigDecimal subtotal
+    ) {
+    }
+
+    private record VentaParaPago(
+            int idVenta,
+            int idUsuarioComprador,
+            String estadoVenta,
+            Timestamp fechaExpiracion,
+            BigDecimal montoTotal,
+            boolean vencida
+    ) {
+    }
+
+    private record ReservaParaEmitir(
+            int idReservaPorVenta,
+            int cantidad
     ) {
     }
 }

@@ -54,6 +54,16 @@
             max-width: 110px;
         }
 
+        select {
+            padding: 8px;
+        }
+
+        label {
+            display: inline-block;
+            margin-right: 12px;
+            margin-top: 8px;
+        }
+
         table {
             border-collapse: collapse;
             width: 100%;
@@ -96,16 +106,16 @@
     <div class="subtitulo">Ticketing Mundial 2026</div>
 
     <div class="panel">
-        <h2>Identidad Firebase</h2>
-
+        <h2 id="saludo-compra">Bienvenido a la selección de compra</h2>
         <div class="detalle">
-            Esta vista usa la sesion Firebase persistida localmente en el navegador.
-            Si ya ingresaste con Google en otra pestana, deberia reconocerte automaticamente.
+            Elegí un evento, seleccioná cantidades y confirmá la reserva.
         </div>
+    </div>
 
+    <div class="panel">
+        <h2>Acceso</h2>
         <button id="btn-login-google">Ingresar con Google</button>
         <div id="mensaje-auth" class="mensaje">No autenticado.</div>
-        <pre id="usuario-firebase">No autenticado.</pre>
     </div>
 
     <div class="panel">
@@ -165,6 +175,51 @@
         <pre id="respuesta-compra">Sin compra.</pre>
     </div>
 
+    <div class="panel">
+        <h2>Pago (testing)</h2>
+        <div class="detalle">
+            Panel crudo para probar POST /ventas/{idVenta}/pagar.
+            No procesa datos reales de tarjeta.
+        </div>
+
+        <label>
+            idVenta:
+            <input id="pago-id-venta" type="number" min="1">
+        </label>
+
+        <label>
+            metodoPago:
+            <select id="pago-metodo">
+                <option value="TARJETA_CREDITO">TARJETA_CREDITO</option>
+                <option value="TARJETA_DEBITO">TARJETA_DEBITO</option>
+                <option value="TRANSFERENCIA">TRANSFERENCIA</option>
+            </select>
+        </label>
+
+        <label>
+            referenciaPago:
+            <input id="pago-referencia" type="text" maxlength="100">
+        </label>
+
+        <label>
+            resultadoSimulado:
+            <select id="pago-resultado">
+                <option value="APROBADO">APROBADO</option>
+                <option value="RECHAZADO">RECHAZADO</option>
+            </select>
+        </label>
+
+        <button id="btn-pagar-venta" disabled>Pagar venta</button>
+
+        <pre id="respuesta-pago">Sin pago.</pre>
+    </div>
+
+    <div class="panel">
+        <a href="/">
+            <button type="button">Volver al inicio</button>
+        </a>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
         import {
@@ -188,12 +243,18 @@
         const btnLoginGoogle = document.getElementById('btn-login-google');
         const btnRecargarEventos = document.getElementById('btn-recargar-eventos');
         const btnComprar = document.getElementById('btn-comprar');
+        const btnPagarVenta = document.getElementById('btn-pagar-venta');
 
         const mensajeAuth = document.getElementById('mensaje-auth');
+        const saludoCompra = document.getElementById('saludo-compra');
         const tablaEventos = document.getElementById('tabla-eventos');
         const tablaSectores = document.getElementById('tabla-sectores');
         const eventoSeleccionado = document.getElementById('evento-seleccionado');
         const totalEstimado = document.getElementById('total-estimado');
+        const pagoIdVenta = document.getElementById('pago-id-venta');
+        const pagoMetodo = document.getElementById('pago-metodo');
+        const pagoReferencia = document.getElementById('pago-referencia');
+        const pagoResultado = document.getElementById('pago-resultado');
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -209,27 +270,25 @@
         btnLoginGoogle.addEventListener('click', ingresarConGoogle);
         btnRecargarEventos.addEventListener('click', cargarEventos);
         btnComprar.addEventListener('click', comprar);
+        btnPagarVenta.addEventListener('click', pagarVenta);
 
         onAuthStateChanged(auth, async usuario => {
             reiniciarCompra();
 
             if (!usuario) {
                 mensajeAuth.textContent = 'No autenticado.';
+                saludoCompra.textContent = 'Bienvenido a la selección de compra';
                 btnRecargarEventos.disabled = true;
                 btnComprar.disabled = true;
-                mostrarTexto('usuario-firebase', 'No autenticado.');
+                btnPagarVenta.disabled = true;
                 return;
             }
 
             mensajeAuth.textContent = 'Autenticado. Cargando eventos...';
+            saludoCompra.textContent = `Bienvenido a la selección de compra, ${usuario.displayName || usuario.email}`;
             btnRecargarEventos.disabled = false;
+            btnPagarVenta.disabled = false;
 
-            mostrarJson('usuario-firebase', {
-                uid: usuario.uid,
-                email: usuario.email,
-                emailVerified: usuario.emailVerified,
-                name: usuario.displayName || null
-            });
 
             try {
                 await cargarEventos();
@@ -470,6 +529,10 @@
                     siguientePaso: respuesta.ok ? 'Venta pendiente creada. Proximo paso: pago.' : null
                 });
 
+                if (respuesta.ok && datos && datos.idVenta) {
+                    pagoIdVenta.value = datos.idVenta;
+                }
+
                 if (!respuesta.ok) {
                     compraEnCurso = false;
                     recalcularTotal();
@@ -482,6 +545,51 @@
                     status: 'ERROR',
                     code: 'ERROR_FRONTEND_CREAR_VENTA',
                     message: 'No se pudo crear la venta pendiente.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function pagarVenta() {
+            const idVenta = Number(pagoIdVenta.value || 0);
+
+            if (!idVenta || idVenta <= 0) {
+                mostrarJson('respuesta-pago', {
+                    status: 'ERROR',
+                    code: 'ID_VENTA_REQUERIDO',
+                    message: 'Ingresa un idVenta valido.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await obtenerTokenActual();
+
+                const respuesta = await fetch(`/ventas/${idVenta}/pagar`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        metodoPago: pagoMetodo.value,
+                        referenciaPago: pagoReferencia.value.trim() || null,
+                        resultadoSimulado: pagoResultado.value
+                    })
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-pago', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-pago', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_PAGAR_VENTA',
+                    message: 'No se pudo disparar el pago.',
                     detail: error.message
                 });
             }

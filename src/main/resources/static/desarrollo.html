@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Desarrollo - Ticketing Mundial 2026</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 32px;
+            background: #f5f5f5;
+            color: #222;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .subtitulo {
+            color: #555;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+
+        .detalle {
+            color: #555;
+            margin-top: 4px;
+            margin-bottom: 12px;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        input {
+            padding: 8px;
+            max-width: 120px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 12px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        th {
+            background: #eee;
+            text-align: left;
+        }
+
+        pre {
+            background: #222;
+            color: #eee;
+            padding: 12px;
+            overflow-x: auto;
+        }
+
+        .mensaje {
+            margin-top: 12px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Panel de desarrollo</h1>
+    <div class="subtitulo">Herramientas tecnicas de diagnostico para Ticketing Mundial 2026</div>
+
+    <div class="panel">
+        <h2>Estado tecnico</h2>
+        <button id="btn-app-health">Probar aplicacion</button>
+        <button id="btn-db-health">Probar DB</button>
+        <pre id="estado">Sin consultar.</pre>
+    </div>
+
+    <div class="panel">
+        <h2>Catalogos</h2>
+        <button id="btn-cargar-paises">Cargar paises</button>
+        <button id="btn-cargar-tipos-documento">Cargar tipos de documento</button>
+
+        <h3>Paises</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Codigo ISO</th>
+                    <th>Nombre</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-paises">
+                <tr>
+                    <td colspan="3">Sin datos cargados.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Tipos de documento</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Codigo</th>
+                    <th>Nombre</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-tipos-documento">
+                <tr>
+                    <td colspan="3">Sin datos cargados.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Autenticacion Firebase</h2>
+        <div class="detalle">
+            Usa el token internamente en headers Authorization. Esta vista no imprime el ID token completo.
+        </div>
+
+        <button id="btn-login-google">Ingresar con Google</button>
+        <button id="btn-verificar-backend" disabled>Verificar token en backend</button>
+        <button id="btn-resolver-backend" disabled>Resolver usuario en backend</button>
+        <button id="btn-logout" disabled>Cerrar sesion</button>
+
+        <div id="mensaje-auth" class="mensaje">Firebase Web SDK pendiente de inicializar.</div>
+
+        <h3>Usuario Firebase actual</h3>
+        <pre id="usuario-firebase">No autenticado.</pre>
+
+        <h3>Respuesta del backend</h3>
+        <pre id="respuesta-backend">Sin verificar.</pre>
+    </div>
+
+    <div class="panel">
+        <h2>Catalogo de venta</h2>
+
+        <button id="btn-ver-catalogo" disabled>Ver eventos (catalogo autenticado)</button>
+
+        <div style="margin-top: 12px;">
+            <input id="id-evento-catalogo" type="number" min="1" placeholder="ID evento">
+            <button id="btn-detalle-evento" disabled>Ver detalle de evento</button>
+        </div>
+
+        <h3>Respuesta catalogo</h3>
+        <pre id="respuesta-catalogo">Sin consultar.</pre>
+    </div>
+
+    <div class="panel">
+        <h2>Entradas y transferencias</h2>
+
+        <button id="btn-ver-mis-entradas" disabled>Ver mis entradas</button>
+        <button id="btn-ver-transferencias-recibidas" disabled>Ver transferencias recibidas</button>
+
+        <div style="margin-top: 12px;">
+            <input id="id-entrada-transferencia" type="number" min="1" placeholder="ID entrada">
+            <input id="correo-destinatario" type="email" maxlength="120" placeholder="Correo destinatario">
+            <button id="btn-solicitar-transferencia" disabled>Solicitar transferencia</button>
+        </div>
+
+        <div style="margin-top: 12px;">
+            <input id="nro-movimiento-transferencia" type="number" min="1" placeholder="Nro. movimiento">
+            <button id="btn-aceptar-transferencia" disabled>Aceptar transferencia</button>
+            <button id="btn-rechazar-transferencia" disabled>Rechazar transferencia</button>
+        </div>
+
+        <h3>Respuesta entradas y transferencias</h3>
+        <pre id="respuesta-transferencias">Sin consultar.</pre>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import {
+            getAuth,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut,
+            onAuthStateChanged,
+            setPersistence,
+            browserLocalPersistence
+        } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
+            authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
+            projectId: "dbii-ticketing-grupo6",
+            storageBucket: "dbii-ticketing-grupo6.firebasestorage.app",
+            messagingSenderId: "454622640345",
+            appId: "1:454622640345:web:af52e5c7e653c4373926c8"
+        };
+
+        const btnAppHealth = document.getElementById('btn-app-health');
+        const btnDbHealth = document.getElementById('btn-db-health');
+        const btnCargarPaises = document.getElementById('btn-cargar-paises');
+        const btnCargarTiposDocumento = document.getElementById('btn-cargar-tipos-documento');
+
+        const btnLoginGoogle = document.getElementById('btn-login-google');
+        const btnVerificarBackend = document.getElementById('btn-verificar-backend');
+        const btnResolverBackend = document.getElementById('btn-resolver-backend');
+        const btnLogout = document.getElementById('btn-logout');
+        const btnVerCatalogo = document.getElementById('btn-ver-catalogo');
+        const btnDetalleEvento = document.getElementById('btn-detalle-evento');
+        const inputIdEventoCatalogo = document.getElementById('id-evento-catalogo');
+        const btnVerMisEntradas = document.getElementById('btn-ver-mis-entradas');
+        const btnSolicitarTransferencia = document.getElementById('btn-solicitar-transferencia');
+        const inputIdEntradaTransferencia = document.getElementById('id-entrada-transferencia');
+        const inputCorreoDestinatario = document.getElementById('correo-destinatario');
+        const btnVerTransferenciasRecibidas = document.getElementById('btn-ver-transferencias-recibidas');
+        const btnAceptarTransferencia = document.getElementById('btn-aceptar-transferencia');
+        const btnRechazarTransferencia = document.getElementById('btn-rechazar-transferencia');
+        const inputNroMovimientoTransferencia = document.getElementById('nro-movimiento-transferencia');
+
+        const mensajeAuth = document.getElementById('mensaje-auth');
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+        const persistenceReady = setPersistence(auth, browserLocalPersistence);
+
+        auth.languageCode = 'es';
+
+        btnAppHealth.addEventListener('click', consultarAppHealth);
+        btnDbHealth.addEventListener('click', consultarDbHealth);
+        btnCargarPaises.addEventListener('click', cargarPaises);
+        btnCargarTiposDocumento.addEventListener('click', cargarTiposDocumento);
+
+        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
+        btnVerificarBackend.addEventListener('click', verificarTokenEnBackend);
+        btnResolverBackend.addEventListener('click', resolverUsuarioEnBackend);
+        btnLogout.addEventListener('click', cerrarSesion);
+        btnVerCatalogo.addEventListener('click', verCatalogoVentas);
+        btnDetalleEvento.addEventListener('click', verDetalleEvento);
+        btnVerMisEntradas.addEventListener('click', verMisEntradas);
+        btnSolicitarTransferencia.addEventListener('click', solicitarTransferencia);
+        btnVerTransferenciasRecibidas.addEventListener('click', verTransferenciasRecibidas);
+        btnAceptarTransferencia.addEventListener('click', () => responderTransferencia('aceptar'));
+        btnRechazarTransferencia.addEventListener('click', () => responderTransferencia('rechazar'));
+
+        onAuthStateChanged(auth, usuario => {
+            if (usuario) {
+                mensajeAuth.textContent = 'Autenticado con Firebase.';
+                btnVerificarBackend.disabled = false;
+                btnResolverBackend.disabled = false;
+                btnLogout.disabled = false;
+                btnVerCatalogo.disabled = false;
+                btnDetalleEvento.disabled = false;
+                btnVerMisEntradas.disabled = false;
+                btnSolicitarTransferencia.disabled = false;
+                btnVerTransferenciasRecibidas.disabled = false;
+                btnAceptarTransferencia.disabled = false;
+                btnRechazarTransferencia.disabled = false;
+
+                mostrarJson('usuario-firebase', {
+                    uid: usuario.uid,
+                    email: usuario.email,
+                    emailVerified: usuario.emailVerified,
+                    name: usuario.displayName || null
+                });
+            } else {
+                mensajeAuth.textContent = 'No autenticado.';
+                btnVerificarBackend.disabled = true;
+                btnResolverBackend.disabled = true;
+                btnLogout.disabled = true;
+                btnVerCatalogo.disabled = true;
+                btnDetalleEvento.disabled = true;
+                btnVerMisEntradas.disabled = true;
+                btnSolicitarTransferencia.disabled = true;
+                btnVerTransferenciasRecibidas.disabled = true;
+                btnAceptarTransferencia.disabled = true;
+                btnRechazarTransferencia.disabled = true;
+
+                mostrarTexto('usuario-firebase', 'No autenticado.');
+                mostrarTexto('respuesta-backend', 'Sin verificar.');
+                mostrarTexto('respuesta-catalogo', 'Sin consultar.');
+                mostrarTexto('respuesta-transferencias', 'Sin consultar.');
+            }
+        });
+
+        async function consultarAppHealth() {
+            try {
+                const respuesta = await fetch('/app/health');
+                const datos = await leerRespuesta(respuesta);
+                mostrarJson('estado', datos);
+            } catch (error) {
+                mostrarJson('estado', {
+                    status: 'ERROR',
+                    message: 'No se pudo consultar /app/health',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function consultarDbHealth() {
+            try {
+                const respuesta = await fetch('/db/health');
+                const datos = await leerRespuesta(respuesta);
+                mostrarJson('estado', datos);
+            } catch (error) {
+                mostrarJson('estado', {
+                    status: 'ERROR',
+                    message: 'No se pudo consultar /db/health',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function cargarPaises() {
+            try {
+                const respuesta = await fetch('/paises');
+                const paises = await leerRespuesta(respuesta);
+
+                if (!respuesta.ok || !Array.isArray(paises)) {
+                    throw new Error('No se pudieron cargar los paises');
+                }
+
+                const tabla = document.getElementById('tabla-paises');
+                tabla.replaceChildren();
+
+                paises.forEach(pais => {
+                    const fila = document.createElement('tr');
+                    agregarCelda(fila, pais.idPais);
+                    agregarCelda(fila, pais.codigoIso);
+                    agregarCelda(fila, pais.nombre);
+                    tabla.appendChild(fila);
+                });
+            } catch (error) {
+                mostrarFilaError('tabla-paises', 3, `Error al cargar paises: ${error.message}`);
+            }
+        }
+
+        async function cargarTiposDocumento() {
+            try {
+                const respuesta = await fetch('/tipos-documento');
+                const tipos = await leerRespuesta(respuesta);
+
+                if (!respuesta.ok || !Array.isArray(tipos)) {
+                    throw new Error('No se pudieron cargar los tipos de documento');
+                }
+
+                const tabla = document.getElementById('tabla-tipos-documento');
+                tabla.replaceChildren();
+
+                tipos.forEach(tipo => {
+                    const fila = document.createElement('tr');
+                    agregarCelda(fila, tipo.idTipoDocumento);
+                    agregarCelda(fila, tipo.codigo);
+                    agregarCelda(fila, tipo.nombre);
+                    tabla.appendChild(fila);
+                });
+            } catch (error) {
+                mostrarFilaError('tabla-tipos-documento', 3, `Error al cargar tipos: ${error.message}`);
+            }
+        }
+
+        async function ingresarConGoogle() {
+            try {
+                mensajeAuth.textContent = 'Abriendo login con Google...';
+                await persistenceReady;
+                await signInWithPopup(auth, googleProvider);
+            } catch (error) {
+                mensajeAuth.textContent = 'Error durante el login con Google.';
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: error.code || null,
+                    message: error.message
+                });
+            }
+        }
+
+        async function verificarTokenEnBackend() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/auth/firebase/me', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-backend', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    message: 'No se pudo verificar el token en el backend.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function resolverUsuarioEnBackend() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/auth/resolve', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-backend', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_AUTH_RESOLVE',
+                    message: 'No se pudo resolver el usuario en el backend.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function verCatalogoVentas() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/ventas/catalogo', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-catalogo', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_VENTAS_CATALOGO',
+                    message: 'No se pudo consultar el catalogo de ventas.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function verDetalleEvento() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            const idEvento = inputIdEventoCatalogo.value.trim();
+
+            if (!idEvento) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'ID_EVENTO_REQUERIDO',
+                    message: 'Ingresa un id de evento.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch(`/ventas/catalogo/${idEvento}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-catalogo', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-catalogo', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_VENTAS_CATALOGO_DETALLE',
+                    message: 'No se pudo consultar el detalle del evento.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function verMisEntradas() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/entradas/mias', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-transferencias', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_ENTRADAS',
+                    message: 'No se pudieron consultar las entradas.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function solicitarTransferencia() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            const idEntrada = inputIdEntradaTransferencia.value.trim();
+            const correoDestinatario = inputCorreoDestinatario.value.trim();
+
+            if (!idEntrada || Number(idEntrada) <= 0) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'ID_ENTRADA_REQUERIDO',
+                    message: 'Ingresa un id de entrada valido.'
+                });
+                return;
+            }
+
+            if (!correoDestinatario) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'CORREO_DESTINATARIO_REQUERIDO',
+                    message: 'Ingresa el correo del destinatario.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/entradas/' + idEntrada + '/transferencias', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ correoDestinatario })
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-transferencias', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_SOLICITAR_TRANSFERENCIA',
+                    message: 'No se pudo solicitar la transferencia.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function verTransferenciasRecibidas() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch('/transferencias/recibidas', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken
+                    }
+                });
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-transferencias', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_TRANSFERENCIAS_RECIBIDAS',
+                    message: 'No se pudieron consultar las transferencias recibidas.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function responderTransferencia(accion) {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            const idEntrada = inputIdEntradaTransferencia.value.trim();
+            const nroMovimiento = inputNroMovimientoTransferencia.value.trim();
+
+            if (!idEntrada || Number(idEntrada) <= 0) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'ID_ENTRADA_REQUERIDO',
+                    message: 'Ingresa un id de entrada valido.'
+                });
+                return;
+            }
+
+            if (!nroMovimiento || Number(nroMovimiento) <= 0) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'NRO_MOVIMIENTO_REQUERIDO',
+                    message: 'Ingresa un numero de movimiento valido.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                const respuesta = await fetch(
+                    '/entradas/' + idEntrada
+                    + '/transferencias/' + nroMovimiento
+                    + '/' + accion,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + idToken
+                        }
+                    }
+                );
+
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-transferencias', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-transferencias', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_RESPONDER_TRANSFERENCIA',
+                    message: 'No se pudo ' + accion + ' la transferencia.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function cerrarSesion() {
+            try {
+                await signOut(auth);
+                mensajeAuth.textContent = 'Sesion cerrada.';
+                mostrarTexto('usuario-firebase', 'No autenticado.');
+                mostrarTexto('respuesta-backend', 'Sin verificar.');
+                mostrarTexto('respuesta-catalogo', 'Sin consultar.');
+                mostrarTexto('respuesta-transferencias', 'Sin consultar.');
+            } catch (error) {
+                mostrarJson('respuesta-backend', {
+                    status: 'ERROR',
+                    message: 'No se pudo cerrar sesion.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function leerRespuesta(respuesta) {
+            const texto = await respuesta.text();
+
+            if (!texto) {
+                return null;
+            }
+
+            try {
+                return JSON.parse(texto);
+            } catch {
+                return texto;
+            }
+        }
+
+        function agregarCelda(fila, valor) {
+            const celda = document.createElement('td');
+            celda.textContent = valor == null ? '' : String(valor);
+            fila.appendChild(celda);
+        }
+
+        function mostrarFilaError(idTabla, columnas, mensaje) {
+            const tabla = document.getElementById(idTabla);
+            const fila = document.createElement('tr');
+            const celda = document.createElement('td');
+
+            celda.colSpan = columnas;
+            celda.textContent = mensaje;
+            fila.appendChild(celda);
+            tabla.replaceChildren(fila);
+        }
+
+        function mostrarJson(idElemento, datos) {
+            document.getElementById(idElemento).textContent =
+                JSON.stringify(datos, null, 2);
+        }
+
+        function mostrarTexto(idElemento, texto) {
+            document.getElementById(idElemento).textContent = texto;
+        }
+    </script>
+</body>
+
+</html>

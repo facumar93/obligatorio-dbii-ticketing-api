@@ -171,6 +171,12 @@
 
         <h3>Respuesta del backend</h3>
         <pre id="respuesta-backend">Sin enviar.</pre>
+
+        <div class="acciones">
+            <a href="/">
+                <button type="button">Volver al inicio</button>
+            </a>
+        </div>
     </div>
 
     <script type="module">
@@ -360,6 +366,10 @@
                     ok: respuesta.ok,
                     body: datos
                 });
+
+                if (respuesta.ok && datos && datos.code === 'REGISTRO_OK') {
+                    mostrarTexto('mensaje-auth', 'Registro completado. Volve al inicio para continuar.');
+                }
             } catch (error) {
                 mostrarJson('respuesta-backend', {
                     status: 'ERROR',

@@ -30,16 +30,54 @@
             margin-bottom: 18px;
         }
 
-        button {
+        .detalle {
+            color: #555;
+            margin-top: 4px;
+            margin-bottom: 12px;
+        }
+
+        .mensaje {
+            margin-top: 12px;
+            font-weight: bold;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        button,
+        .boton-link {
+            display: inline-block;
             padding: 8px 12px;
             cursor: pointer;
             margin-right: 8px;
             margin-top: 8px;
+            border: 1px solid #777;
+            border-radius: 3px;
+            background: #eee;
+            color: #222;
+            text-decoration: none;
+            font-size: 14px;
         }
 
-        button:disabled {
+        button:disabled,
+        .boton-link.desactivado {
             cursor: not-allowed;
             opacity: 0.6;
+        }
+
+        .boton-principal {
+            font-size: 18px;
+            font-weight: bold;
+            padding: 12px 18px;
+            background: #222;
+            color: white;
+            border-color: #222;
+        }
+
+        .boton-principal:disabled {
+            background: #777;
+            border-color: #777;
         }
 
         table {
@@ -59,92 +97,56 @@
             text-align: left;
         }
 
-        pre {
-            background: #222;
-            color: #eee;
-            padding: 12px;
-            overflow-x: auto;
-        }
-
-        .mensaje {
+        .acciones {
             margin-top: 12px;
-            font-weight: bold;
-        }
-
-        .detalle {
-            color: #555;
-            margin-top: 4px;
-            margin-bottom: 12px;
         }
     </style>
 </head>
 
 <body>
     <h1>Ticketing Mundial 2026</h1>
-    <div class="subtitulo">Frontend mínimo servido por Spring Boot</div>
+    <div class="subtitulo">Compra, transferencia y validacion de entradas para partidos del Mundial 2026.</div>
 
     <div class="panel">
-        <h2>Estado técnico</h2>
-        <button id="btn-app-health">Probar aplicación</button>
-        <button id="btn-db-health">Probar DB</button>
-        <pre id="estado">Sin consultar.</pre>
-    </div>
+        <h2>Cartelera de proximos partidos</h2>
+        <div class="detalle">
+            Partidos disponibles proximamente. Para comprar entradas, inicia sesion con Google.
+        </div>
 
-    <div class="panel">
-        <h2>Países</h2>
-        <button id="btn-cargar-paises">Cargar países desde DB</button>
+        <button id="btn-recargar-cartelera">Recargar cartelera</button>
 
         <table>
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Código ISO</th>
-                    <th>Nombre</th>
+                    <th>Partido</th>
+                    <th>Fecha</th>
                 </tr>
             </thead>
-            <tbody id="tabla-paises">
+            <tbody id="tabla-cartelera">
                 <tr>
-                    <td colspan="3">Sin datos cargados.</td>
+                    <td colspan="2">Cargando cartelera...</td>
                 </tr>
             </tbody>
         </table>
     </div>
 
     <div class="panel">
-        <h2>Autenticación Firebase</h2>
-
+        <h2>Acceso</h2>
         <div class="detalle">
-            Este panel inicia sesión con Google usando Firebase Authentication,
-            obtiene un ID token real y lo envía al backend con el header
-            Authorization: Bearer &lt;token&gt;.
+            Inicia sesion con Google para comprar entradas. Si es tu primer ingreso, te vamos a pedir completar el
+            registro.
         </div>
 
         <button id="btn-login-google">Ingresar con Google</button>
-        <button id="btn-verificar-backend" disabled>Verificar token en backend</button>
-        <button id="btn-resolver-backend" disabled>Resolver usuario en backend</button>
-        <button id="btn-logout" disabled>Cerrar sesión</button>
+        <button id="btn-logout" disabled>Cerrar sesion</button>
 
-        <div id="mensaje-auth" class="mensaje">Firebase Web SDK pendiente de inicializar.</div>
+        <div id="mensaje-auth" class="mensaje">No autenticado.</div>
+        <div id="usuario-actual" class="detalle">Sin usuario.</div>
 
-        <h3>Usuario Firebase actual</h3>
-        <pre id="usuario-firebase">No autenticado.</pre>
-
-        <h3>Respuesta del backend</h3>
-        <pre id="respuesta-backend">Sin verificar.</pre>
-    </div>
-
-    <div class="panel">
-        <h2>Catalogo de venta</h2>
-
-        <button id="btn-ver-catalogo" disabled>Ver eventos (catalogo)</button>
-
-        <div style="margin-top: 12px;">
-            <input id="id-evento-catalogo" type="number" min="1" placeholder="ID evento">
-            <button id="btn-detalle-evento" disabled>Ver detalle de evento</button>
+        <div class="acciones">
+            <button id="btn-entradas" class="boton-principal" disabled>Entradas a la venta</button>
+            <a id="link-registro" class="boton-link" href="/registro.html" hidden>Completar registro</a>
         </div>
-
-        <h3>Respuesta catalogo</h3>
-        <pre id="respuesta-catalogo">Sin consultar.</pre>
     </div>
 
     <script type="module">
@@ -159,11 +161,6 @@
             browserLocalPersistence
         } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
-        /*
-         * Config web pública de Firebase.
-         * Completar estos valores con los de Firebase Console -> Project settings -> General -> Apps web.
-         * No pegar acá service-account.json ni private_key.
-         */
         const firebaseConfig = {
             apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
             authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
@@ -173,234 +170,115 @@
             appId: "1:454622640345:web:af52e5c7e653c4373926c8"
         };
 
-        const btnAppHealth = document.getElementById('btn-app-health');
-        const btnDbHealth = document.getElementById('btn-db-health');
-        const btnCargarPaises = document.getElementById('btn-cargar-paises');
-
+        const btnRecargarCartelera = document.getElementById('btn-recargar-cartelera');
         const btnLoginGoogle = document.getElementById('btn-login-google');
-        const btnVerificarBackend = document.getElementById('btn-verificar-backend');
-        const btnResolverBackend = document.getElementById('btn-resolver-backend');
         const btnLogout = document.getElementById('btn-logout');
-        const btnVerCatalogo = document.getElementById('btn-ver-catalogo');
-        const btnDetalleEvento = document.getElementById('btn-detalle-evento');
-        const inputIdEventoCatalogo = document.getElementById('id-evento-catalogo');
+        const btnEntradas = document.getElementById('btn-entradas');
+        const linkRegistro = document.getElementById('link-registro');
 
+        const tablaCartelera = document.getElementById('tabla-cartelera');
         const mensajeAuth = document.getElementById('mensaje-auth');
+        const usuarioActual = document.getElementById('usuario-actual');
 
-        let auth = null;
-        let googleProvider = null;
-        let persistenceReady = null;
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+        const persistenceReady = setPersistence(auth, browserLocalPersistence);
 
-        btnAppHealth.addEventListener('click', consultarAppHealth);
-        btnDbHealth.addEventListener('click', consultarDbHealth);
-        btnCargarPaises.addEventListener('click', cargarPaises);
+        auth.languageCode = 'es';
 
+        btnRecargarCartelera.addEventListener('click', cargarCartelera);
         btnLoginGoogle.addEventListener('click', ingresarConGoogle);
-        btnVerificarBackend.addEventListener('click', verificarTokenEnBackend);
-        btnResolverBackend.addEventListener('click', resolverUsuarioEnBackend);
         btnLogout.addEventListener('click', cerrarSesion);
-        btnVerCatalogo.addEventListener('click', verCatalogoVentas);
-        btnDetalleEvento.addEventListener('click', verDetalleEvento);
+        btnEntradas.addEventListener('click', () => {
+            if (!btnEntradas.disabled) {
+                window.location.href = '/compra.html';
+            }
+        });
 
-        inicializarFirebaseWeb();
+        cargarCartelera();
 
-        function inicializarFirebaseWeb() {
-            if (!configFirebaseCompleta()) {
-                mensajeAuth.textContent =
-                    'Falta completar firebaseConfig en index.html con los valores públicos de Firebase.';
-                btnLoginGoogle.disabled = true;
+        onAuthStateChanged(auth, async usuario => {
+            deshabilitarCompra();
+            linkRegistro.hidden = true;
+
+            if (!usuario) {
+                mensajeAuth.textContent = 'No autenticado. Inicia sesion para comprar entradas.';
+                usuarioActual.textContent = 'Sin usuario.';
+                btnLogout.disabled = true;
                 return;
             }
 
-            const app = initializeApp(firebaseConfig);
+            btnLogout.disabled = false;
+            usuarioActual.textContent = `Sesion iniciada como ${usuario.displayName || usuario.email}`;
+            mensajeAuth.textContent = 'Verificando registro del usuario...';
 
-            auth = getAuth(app);
-            auth.languageCode = 'es';
+            await resolverUsuario(usuario);
+        });
 
-            googleProvider = new GoogleAuthProvider();
+        async function cargarCartelera() {
+            tablaCartelera.replaceChildren(filaMensaje('Cargando cartelera...'));
 
-            /*
-             * Mantiene la autenticación persistida localmente en el navegador.
-             * La sesión se comparte entre pestañas y puede sobrevivir al cierre del navegador.
-             * Para una demo en equipo, esto evita reloguearse en cada vista.
-             */
-            persistenceReady = setPersistence(auth, browserLocalPersistence);
+            try {
+                const respuesta = await fetch('/cartelera');
+                const datos = await leerRespuesta(respuesta);
 
-            onAuthStateChanged(auth, usuario => {
-                if (usuario) {
-                    mensajeAuth.textContent = 'Autenticado con Firebase.';
-                    btnVerificarBackend.disabled = false;
-                    btnResolverBackend.disabled = false;
-                    btnLogout.disabled = false;
-                    btnVerCatalogo.disabled = false;
-                    btnDetalleEvento.disabled = false;
-
-                    mostrarJson('usuario-firebase', {
-                        uid: usuario.uid,
-                        email: usuario.email,
-                        emailVerified: usuario.emailVerified,
-                        name: usuario.displayName || null
-                    });
-                } else {
-                    mensajeAuth.textContent = 'No autenticado.';
-                    btnVerificarBackend.disabled = true;
-                    btnResolverBackend.disabled = true;
-                    btnLogout.disabled = true;
-                    btnVerCatalogo.disabled = true;
-                    btnDetalleEvento.disabled = true;
-
-                    mostrarTexto('usuario-firebase', 'No autenticado.');
-                    mostrarTexto('respuesta-backend', 'Sin verificar.');
-                    mostrarTexto('respuesta-catalogo', 'Sin consultar.');
+                if (!respuesta.ok || !Array.isArray(datos)) {
+                    throw new Error('No se pudo cargar la cartelera');
                 }
+
+                renderizarCartelera(datos);
+            } catch (error) {
+                tablaCartelera.replaceChildren(filaMensaje(`Error al cargar cartelera: ${error.message}`));
+            }
+        }
+
+        function renderizarCartelera(eventos) {
+            tablaCartelera.replaceChildren();
+
+            if (eventos.length === 0) {
+                tablaCartelera.appendChild(filaMensaje('No hay partidos disponibles en cartelera.'));
+                return;
+            }
+
+            eventos.forEach(evento => {
+                const fila = document.createElement('tr');
+                const partido = document.createElement('td');
+                const fecha = document.createElement('td');
+
+                partido.textContent = `${evento.seleccionLocal} vs ${evento.seleccionVisitante}`;
+                fecha.textContent = evento.fechaHoraInicio || '';
+
+                fila.appendChild(partido);
+                fila.appendChild(fecha);
+                tablaCartelera.appendChild(fila);
             });
         }
 
-        function configFirebaseCompleta() {
-            return Object.values(firebaseConfig).every(valor =>
-                typeof valor === 'string'
-                && valor.trim() !== ''
-                && !valor.startsWith('PEGAR_')
-            );
-        }
+        function filaMensaje(mensaje) {
+            const fila = document.createElement('tr');
+            const celda = document.createElement('td');
 
-        async function consultarAppHealth() {
-            try {
-                const respuesta = await fetch('/app/health');
-                const datos = await leerRespuesta(respuesta);
-                mostrarEstado(datos);
-            } catch (error) {
-                mostrarEstado({
-                    status: 'ERROR',
-                    message: 'No se pudo consultar /app/health',
-                    detail: error.message
-                });
-            }
-        }
+            celda.colSpan = 2;
+            celda.textContent = mensaje;
+            fila.appendChild(celda);
 
-        async function consultarDbHealth() {
-            try {
-                const respuesta = await fetch('/db/health');
-                const datos = await leerRespuesta(respuesta);
-                mostrarEstado(datos);
-            } catch (error) {
-                mostrarEstado({
-                    status: 'ERROR',
-                    message: 'No se pudo consultar /db/health',
-                    detail: error.message
-                });
-            }
-        }
-
-        async function cargarPaises() {
-            try {
-                const respuesta = await fetch('/paises');
-                const paises = await leerRespuesta(respuesta);
-
-                const tabla = document.getElementById('tabla-paises');
-                tabla.innerHTML = '';
-
-                paises.forEach(pais => {
-                    const fila = document.createElement('tr');
-
-                    fila.innerHTML = `
-                        <td>${pais.idPais}</td>
-                        <td>${pais.codigoIso}</td>
-                        <td>${pais.nombre}</td>
-                    `;
-
-                    tabla.appendChild(fila);
-                });
-            } catch (error) {
-                const tabla = document.getElementById('tabla-paises');
-                tabla.innerHTML = `
-                    <tr>
-                        <td colspan="3">Error al cargar países: ${error.message}</td>
-                    </tr>
-                `;
-            }
+            return fila;
         }
 
         async function ingresarConGoogle() {
-            if (!auth || !googleProvider) {
-                mensajeAuth.textContent = 'Firebase Web SDK no está inicializado.';
-                return;
-            }
-
             try {
                 mensajeAuth.textContent = 'Abriendo login con Google...';
-
                 await persistenceReady;
-
-                const credencial = await signInWithPopup(auth, googleProvider);
-                const usuario = credencial.user;
-
-                mensajeAuth.textContent = 'Login Google completado. Sesión persistida localmente.';
-
-                mostrarJson('usuario-firebase', {
-                    uid: usuario.uid,
-                    email: usuario.email,
-                    emailVerified: usuario.emailVerified,
-                    name: usuario.displayName || null
-                });
+                await signInWithPopup(auth, googleProvider);
             } catch (error) {
-                mensajeAuth.textContent = 'Error durante el login con Google.';
-
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    code: error.code || null,
-                    message: error.message
-                });
+                mensajeAuth.textContent = `Error durante el login con Google: ${error.message}`;
             }
         }
 
-        async function verificarTokenEnBackend() {
-            if (!auth || !auth.currentUser) {
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    message: 'No hay usuario autenticado en Firebase.'
-                });
-                return;
-            }
-
+        async function resolverUsuario(usuario) {
             try {
-                const idToken = await auth.currentUser.getIdToken();
-
-                const respuesta = await fetch('/auth/firebase/me', {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    }
-                });
-
-                const datos = await leerRespuesta(respuesta);
-
-                mostrarJson('respuesta-backend', {
-                    httpStatus: respuesta.status,
-                    ok: respuesta.ok,
-                    body: datos
-                });
-            } catch (error) {
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    message: 'No se pudo verificar el token en el backend.',
-                    detail: error.message
-                });
-            }
-        }
-
-        async function resolverUsuarioEnBackend() {
-            if (!auth || !auth.currentUser) {
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    code: 'SIN_SESION_FIREBASE',
-                    message: 'No hay usuario autenticado en Firebase.'
-                });
-                return;
-            }
-
-            try {
-                const idToken = await auth.currentUser.getIdToken();
+                const idToken = await usuario.getIdToken();
 
                 const respuesta = await fetch('/auth/resolve', {
                     method: 'POST',
@@ -411,124 +289,51 @@
 
                 const datos = await leerRespuesta(respuesta);
 
-                mostrarJson('respuesta-backend', {
-                    httpStatus: respuesta.status,
-                    ok: respuesta.ok,
-                    body: datos
-                });
+                if (!respuesta.ok) {
+                    mensajeAuth.textContent = datos && datos.message
+                        ? datos.message
+                        : 'No se pudo resolver el usuario.';
+                    return;
+                }
+
+                if (datos.code === 'REGISTRO_REQUERIDO') {
+                    mensajeAuth.textContent = 'Necesitas completar el registro antes de comprar.';
+                    linkRegistro.hidden = false;
+                    deshabilitarCompra();
+                    return;
+                }
+
+                if (datos.code === 'LOGIN_OK' || datos.code === 'USUARIO_VINCULADO') {
+                    mensajeAuth.textContent = 'Usuario listo para comprar entradas.';
+                    linkRegistro.hidden = true;
+                    habilitarCompra();
+                    return;
+                }
+
+                mensajeAuth.textContent = 'Respuesta de identidad no esperada.';
             } catch (error) {
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    code: 'ERROR_FRONTEND_AUTH_RESOLVE',
-                    message: 'No se pudo resolver el usuario en el backend.',
-                    detail: error.message
-                });
-            }
-        }
-
-        async function verCatalogoVentas() {
-            if (!auth || !auth.currentUser) {
-                mostrarJson('respuesta-catalogo', {
-                    status: 'ERROR',
-                    code: 'SIN_SESION_FIREBASE',
-                    message: 'No hay usuario autenticado en Firebase.'
-                });
-                return;
-            }
-
-            try {
-                const idToken = await auth.currentUser.getIdToken();
-
-                const respuesta = await fetch('/ventas/catalogo', {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    }
-                });
-
-                const datos = await leerRespuesta(respuesta);
-
-                mostrarJson('respuesta-catalogo', {
-                    httpStatus: respuesta.status,
-                    ok: respuesta.ok,
-                    body: datos
-                });
-            } catch (error) {
-                mostrarJson('respuesta-catalogo', {
-                    status: 'ERROR',
-                    code: 'ERROR_FRONTEND_VENTAS_CATALOGO',
-                    message: 'No se pudo consultar el catalogo de ventas.',
-                    detail: error.message
-                });
-            }
-        }
-
-        async function verDetalleEvento() {
-            if (!auth || !auth.currentUser) {
-                mostrarJson('respuesta-catalogo', {
-                    status: 'ERROR',
-                    code: 'SIN_SESION_FIREBASE',
-                    message: 'No hay usuario autenticado en Firebase.'
-                });
-                return;
-            }
-
-            const idEvento = inputIdEventoCatalogo.value.trim();
-
-            if (!idEvento) {
-                mostrarJson('respuesta-catalogo', {
-                    status: 'ERROR',
-                    code: 'ID_EVENTO_REQUERIDO',
-                    message: 'Ingresa un id de evento.'
-                });
-                return;
-            }
-
-            try {
-                const idToken = await auth.currentUser.getIdToken();
-
-                const respuesta = await fetch(`/ventas/catalogo/${idEvento}`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    }
-                });
-
-                const datos = await leerRespuesta(respuesta);
-
-                mostrarJson('respuesta-catalogo', {
-                    httpStatus: respuesta.status,
-                    ok: respuesta.ok,
-                    body: datos
-                });
-            } catch (error) {
-                mostrarJson('respuesta-catalogo', {
-                    status: 'ERROR',
-                    code: 'ERROR_FRONTEND_VENTAS_CATALOGO_DETALLE',
-                    message: 'No se pudo consultar el detalle del evento.',
-                    detail: error.message
-                });
+                mensajeAuth.textContent = `No se pudo verificar el usuario: ${error.message}`;
             }
         }
 
         async function cerrarSesion() {
-            if (!auth) {
-                return;
-            }
-
             try {
                 await signOut(auth);
-                mensajeAuth.textContent = 'Sesión cerrada.';
-                mostrarTexto('usuario-firebase', 'No autenticado.');
-                mostrarTexto('respuesta-backend', 'Sin verificar.');
-                mostrarTexto('respuesta-catalogo', 'Sin consultar.');
+                mensajeAuth.textContent = 'Sesion cerrada.';
+                usuarioActual.textContent = 'Sin usuario.';
+                deshabilitarCompra();
+                linkRegistro.hidden = true;
             } catch (error) {
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    message: 'No se pudo cerrar sesión.',
-                    detail: error.message
-                });
+                mensajeAuth.textContent = `No se pudo cerrar sesion: ${error.message}`;
             }
+        }
+
+        function habilitarCompra() {
+            btnEntradas.disabled = false;
+        }
+
+        function deshabilitarCompra() {
+            btnEntradas.disabled = true;
         }
 
         async function leerRespuesta(respuesta) {
@@ -543,19 +348,6 @@
             } catch {
                 return texto;
             }
-        }
-
-        function mostrarEstado(datos) {
-            mostrarJson('estado', datos);
-        }
-
-        function mostrarJson(idElemento, datos) {
-            document.getElementById(idElemento).textContent =
-                JSON.stringify(datos, null, 2);
-        }
-
-        function mostrarTexto(idElemento, texto) {
-            document.getElementById(idElemento).textContent = texto;
         }
     </script>
 </body>

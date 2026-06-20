@@ -106,6 +106,44 @@ public class EntradasController {
         }
     }
 
+    @GetMapping("/transferencias/enviadas")
+    public ResponseEntity<?> listarTransferenciasEnviadas(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+
+        VerifiedFirebaseToken token;
+
+        try {
+            token = FirebaseTokenVerifier.verifyAuthorizationHeader(authorizationHeader);
+        } catch (InvalidAuthorizationException e) {
+            return respuestaNoAutorizada(e.getCode(), e.getMessage());
+        }
+
+        try (Connection connection = DbConnectionFactory.getConnection()) {
+            Integer idUsuario = buscarIdUsuarioPorFirebaseUid(connection, token.uid());
+
+            if (idUsuario == null) {
+                Map<String, Object> respuesta = respuestaBase("ERROR", "USUARIO_NO_REGISTRADO");
+                respuesta.put("message", "El usuario autenticado no existe en USUARIO_GENERAL");
+
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(respuesta);
+            }
+
+            ResultadoTransferenciasEnviadas resultado = buscarTransferenciasEnviadas(connection, idUsuario);
+
+            if (resultado.transferenciaInconsistente()) {
+                return respuestaTransferenciaInconsistente();
+            }
+
+            return ResponseEntity.ok(resultado.transferencias());
+
+        } catch (SQLException | IllegalStateException e) {
+            Map<String, Object> respuesta = respuestaBase("ERROR", "ERROR_DB_TRANSFERENCIAS_ENVIADAS");
+            respuesta.put("message", "No se pudieron cargar las transferencias enviadas");
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(respuesta);
+        }
+    }
+
     @PostMapping("/entradas/{idEntrada}/transferencias")
     public ResponseEntity<Map<String, Object>> solicitarTransferencia(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
@@ -285,6 +323,135 @@ public class EntradasController {
             @PathVariable("nroMovimiento") int nroMovimiento) {
 
         return responderTransferencia(authorizationHeader, idEntrada, nroMovimiento, false);
+    }
+
+    @PostMapping("/entradas/{idEntrada}/transferencias/{nroMovimiento}/cancelar")
+    public ResponseEntity<Map<String, Object>> cancelarTransferencia(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @PathVariable("idEntrada") int idEntrada,
+            @PathVariable("nroMovimiento") int nroMovimiento) {
+
+        VerifiedFirebaseToken token;
+
+        try {
+            token = FirebaseTokenVerifier.verifyAuthorizationHeader(authorizationHeader);
+        } catch (InvalidAuthorizationException e) {
+            return respuestaNoAutorizada(e.getCode(), e.getMessage());
+        }
+
+        if (idEntrada <= 0 || nroMovimiento <= 0) {
+            Map<String, Object> respuesta = respuestaBase("ERROR", "INPUT_INVALIDO");
+            respuesta.put("message", "idEntrada y nroMovimiento deben ser mayores a cero");
+
+            return ResponseEntity.badRequest().body(respuesta);
+        }
+
+        try (Connection connection = DbConnectionFactory.getConnection()) {
+            Integer idActor = buscarIdUsuarioPorFirebaseUid(connection, token.uid());
+
+            if (idActor == null) {
+                Map<String, Object> respuesta = respuestaBase("ERROR", "USUARIO_NO_REGISTRADO");
+                respuesta.put("message", "El usuario autenticado no existe en USUARIO_GENERAL");
+
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(respuesta);
+            }
+
+            connection.setAutoCommit(false);
+
+            try {
+                EntradaBloqueada entrada = bloquearEntrada(connection, idEntrada);
+
+                if (entrada == null) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "ENTRADA_NO_ENCONTRADA");
+                    respuesta.put("message", "La entrada solicitada no existe");
+
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(respuesta);
+                }
+
+                TransferenciaBloqueada transferencia = buscarTransferenciaBloqueada(
+                        connection,
+                        idEntrada,
+                        nroMovimiento
+                );
+
+                if (transferencia == null || !"TRANSFERENCIA".equals(transferencia.tipoMovimiento())) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "TRANSFERENCIA_NO_ENCONTRADA");
+                    respuesta.put("message", "La transferencia solicitada no existe");
+
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(respuesta);
+                }
+
+                if (transferencia.idTitularOrigen() != idActor) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "USUARIO_NO_ES_EMISOR");
+                    respuesta.put("message", "El usuario autenticado no es el emisor de la transferencia");
+
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(respuesta);
+                }
+
+                if (!"PENDIENTE".equals(transferencia.estadoMovimiento())) {
+                    connection.rollback();
+
+                    Map<String, Object> respuesta = respuestaBase("ERROR", "TRANSFERENCIA_NO_PENDIENTE");
+                    respuesta.put("message", "La transferencia ya no esta pendiente");
+
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(respuesta);
+                }
+
+                if (!esTransferenciaPendienteCoherente(transferencia)) {
+                    connection.rollback();
+                    return respuestaTransferenciaInconsistente();
+                }
+
+                Timestamp instanteCancelacion = obtenerAhoraBase(connection);
+                int filasActualizadas = marcarTransferenciaCancelada(
+                        connection,
+                        idEntrada,
+                        nroMovimiento,
+                        instanteCancelacion
+                );
+
+                if (filasActualizadas != 1) {
+                    connection.rollback();
+                    return respuestaTransferenciaInconsistente();
+                }
+
+                connection.commit();
+
+                Map<String, Object> respuesta = respuestaBase("OK", "TRANSFERENCIA_CANCELADA");
+                respuesta.put("idEntrada", idEntrada);
+                respuesta.put("nroMovimiento", nroMovimiento);
+                respuesta.put("estadoMovimiento", "CANCELADA");
+                respuesta.put("fechaRespuesta", timestampAString(instanteCancelacion));
+
+                return ResponseEntity.ok(respuesta);
+
+            } catch (SQLException e) {
+                rollbackSilencioso(connection);
+
+                Map<String, Object> respuesta = respuestaBase(
+                        "ERROR",
+                        "ERROR_DB_CANCELAR_TRANSFERENCIA"
+                );
+                respuesta.put("message", "No se pudo cancelar la transferencia");
+
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(respuesta);
+            }
+
+        } catch (SQLException | IllegalStateException e) {
+            Map<String, Object> respuesta = respuestaBase(
+                    "ERROR",
+                    "ERROR_DB_CANCELAR_TRANSFERENCIA"
+            );
+            respuesta.put("message", "No se pudo cancelar la transferencia");
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(respuesta);
+        }
     }
 
     private static ResponseEntity<Map<String, Object>> responderTransferencia(
@@ -741,6 +908,107 @@ public class EntradasController {
         return new ResultadoTransferenciasRecibidas(transferencias, false);
     }
 
+    private static ResultadoTransferenciasEnviadas buscarTransferenciasEnviadas(
+            Connection connection,
+            int idUsuario
+    ) throws SQLException {
+
+        String sql = """
+                SELECT
+                    mae.id_entrada,
+                    mae.nro_movimiento,
+                    mae.estado_movimiento,
+                    mae.fecha_solicitud,
+                    mae.fecha_respuesta,
+                    mae.fecha_desde,
+                    mae.fecha_hasta,
+                    en.estado_entrada,
+                    destino.correo AS correo_destino,
+                    destino.nombre AS nombre_destino,
+                    destino.apellido AS apellido_destino,
+                    ev.id_evento,
+                    ev.fecha_hora_inicio,
+                    local.nombre AS seleccion_local,
+                    visitante.nombre AS seleccion_visitante,
+                    s.id_sector,
+                    s.nombre_sector,
+                    (
+                        SELECT COUNT(*)
+                        FROM MOVIMIENTO_ASIGNACION_ENTRADA pendientes
+                        WHERE pendientes.id_entrada = mae.id_entrada
+                          AND pendientes.tipo_movimiento = 'TRANSFERENCIA'
+                          AND pendientes.estado_movimiento = 'PENDIENTE'
+                    ) AS cantidad_pendientes
+                FROM MOVIMIENTO_ASIGNACION_ENTRADA mae
+                JOIN ENTRADA en
+                    ON en.id_entrada = mae.id_entrada
+                JOIN RESERVA_POR_VENTA rpv
+                    ON rpv.id_reserva_por_venta = en.id_reserva_por_venta
+                JOIN EVENTO ev
+                    ON ev.id_evento = rpv.id_evento
+                JOIN SELECCION_NACIONAL local
+                    ON local.id_seleccion = ev.id_seleccion_local
+                JOIN SELECCION_NACIONAL visitante
+                    ON visitante.id_seleccion = ev.id_seleccion_visitante
+                JOIN SECTOR s
+                    ON s.id_sector = rpv.id_sector
+                JOIN USUARIO_GENERAL destino
+                    ON destino.id_usuario = mae.id_usuario_destinatario
+                WHERE mae.id_usuario_titular_origen = ?
+                  AND mae.tipo_movimiento = 'TRANSFERENCIA'
+                  AND mae.estado_movimiento = 'PENDIENTE'
+                ORDER BY mae.fecha_solicitud, mae.id_entrada, mae.nro_movimiento
+                """;
+
+        List<Map<String, Object>> transferencias = new ArrayList<>();
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, idUsuario);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    boolean fechasIncoherentes =
+                            resultSet.getTimestamp("fecha_respuesta") != null
+                            || resultSet.getTimestamp("fecha_desde") != null
+                            || resultSet.getTimestamp("fecha_hasta") != null;
+
+                    if (resultSet.getInt("cantidad_pendientes") != 1 || fechasIncoherentes) {
+                        return new ResultadoTransferenciasEnviadas(List.of(), true);
+                    }
+
+                    Map<String, Object> transferencia = new LinkedHashMap<>();
+                    transferencia.put("idEntrada", resultSet.getInt("id_entrada"));
+                    transferencia.put("nroMovimiento", resultSet.getInt("nro_movimiento"));
+                    transferencia.put("estadoMovimiento", resultSet.getString("estado_movimiento"));
+                    transferencia.put(
+                            "fechaSolicitud",
+                            timestampAString(resultSet.getTimestamp("fecha_solicitud"))
+                    );
+                    transferencia.put("estadoEntrada", resultSet.getString("estado_entrada"));
+                    transferencia.put("correoDestino", resultSet.getString("correo_destino").trim());
+                    transferencia.put("nombreDestino", resultSet.getString("nombre_destino").trim());
+                    transferencia.put("apellidoDestino", resultSet.getString("apellido_destino").trim());
+                    transferencia.put("idEvento", resultSet.getInt("id_evento"));
+                    transferencia.put("seleccionLocal", resultSet.getString("seleccion_local").trim());
+                    transferencia.put(
+                            "seleccionVisitante",
+                            resultSet.getString("seleccion_visitante").trim()
+                    );
+                    transferencia.put(
+                            "fechaHoraInicio",
+                            timestampAString(resultSet.getTimestamp("fecha_hora_inicio"))
+                    );
+                    transferencia.put("idSector", resultSet.getInt("id_sector"));
+                    transferencia.put("nombreSector", resultSet.getString("nombre_sector").trim());
+
+                    transferencias.add(transferencia);
+                }
+            }
+        }
+
+        return new ResultadoTransferenciasEnviadas(transferencias, false);
+    }
+
     private static EntradaBloqueada bloquearEntrada(Connection connection, int idEntrada) throws SQLException {
         String sql = """
                 SELECT id_entrada, estado_entrada
@@ -967,6 +1235,34 @@ public class EntradasController {
         }
     }
 
+    private static int marcarTransferenciaCancelada(
+            Connection connection,
+            int idEntrada,
+            int nroMovimiento,
+            Timestamp instante
+    ) throws SQLException {
+
+        String sql = """
+                UPDATE MOVIMIENTO_ASIGNACION_ENTRADA
+                SET estado_movimiento = 'CANCELADA',
+                    fecha_respuesta = ?
+                WHERE id_entrada = ?
+                  AND nro_movimiento = ?
+                  AND tipo_movimiento = 'TRANSFERENCIA'
+                  AND estado_movimiento = 'PENDIENTE'
+                  AND fecha_respuesta IS NULL
+                  AND fecha_desde IS NULL
+                  AND fecha_hasta IS NULL
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setTimestamp(1, instante);
+            statement.setInt(2, idEntrada);
+            statement.setInt(3, nroMovimiento);
+            return statement.executeUpdate();
+        }
+    }
+
     private static UsuarioDestino buscarUsuarioPorCorreo(Connection connection, String correo) throws SQLException {
         String sql = """
                 SELECT id_usuario, correo
@@ -1122,6 +1418,12 @@ public class EntradasController {
 
     public static class SolicitarTransferenciaRequest {
         public String correoDestinatario;
+    }
+
+    private record ResultadoTransferenciasEnviadas(
+            List<Map<String, Object>> transferencias,
+            boolean transferenciaInconsistente
+    ) {
     }
 
     private record ResultadoTransferenciasRecibidas(

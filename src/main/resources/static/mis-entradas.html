@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Mis entradas - Ticketing Mundial 2026</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 32px;
+            background: #f5f5f5;
+            color: #222;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .subtitulo {
+            color: #555;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+
+        .tarjeta {
+            border: 1px solid #bbb;
+            background: #fafafa;
+            padding: 14px;
+            margin-top: 12px;
+        }
+
+        .tarjeta h3 {
+            margin-top: 0;
+            margin-bottom: 8px;
+        }
+
+        .detalle {
+            color: #555;
+            margin: 4px 0;
+        }
+
+        .mensaje {
+            margin-top: 12px;
+            font-weight: bold;
+        }
+
+        .resultado-ok {
+            color: #155724;
+            background: #d4edda;
+            border: 1px solid #9ac9a5;
+            padding: 10px;
+        }
+
+        .resultado-error {
+            color: #721c24;
+            background: #f8d7da;
+            border: 1px solid #d9a5aa;
+            padding: 10px;
+        }
+
+        button,
+        .boton-link {
+            display: inline-block;
+            padding: 8px 12px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 8px;
+            border: 1px solid #777;
+            border-radius: 3px;
+            background: #eee;
+            color: #222;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        input {
+            padding: 8px;
+            width: 260px;
+            max-width: 90%;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Mis entradas</h1>
+    <div class="subtitulo">Consultá tus entradas y administrá transferencias.</div>
+
+    <div class="panel">
+        <h2>Acceso</h2>
+        <button id="btn-login-google">Ingresar con Google</button>
+        <button id="btn-logout" disabled>Cerrar sesión</button>
+        <button id="btn-recargar" disabled>Recargar</button>
+        <a id="link-registro" class="boton-link" href="/registro.html" hidden>Completar registro</a>
+
+        <div id="mensaje-auth" class="mensaje">No autenticado.</div>
+        <div id="usuario-actual" class="detalle">Sin usuario.</div>
+    </div>
+
+    <div id="resultado" class="panel" hidden></div>
+
+    <div class="panel">
+        <h2>Mis entradas</h2>
+        <div id="lista-entradas" class="detalle">Iniciá sesión para consultar tus entradas.</div>
+    </div>
+
+    <div class="panel">
+        <h2>Transferencias recibidas</h2>
+        <div id="lista-recibidas" class="detalle">Iniciá sesión para consultar solicitudes recibidas.</div>
+    </div>
+
+    <div class="panel">
+        <h2>Transferencias enviadas</h2>
+        <div id="lista-enviadas" class="detalle">Iniciá sesión para consultar solicitudes enviadas.</div>
+    </div>
+
+    <div class="panel">
+        <a class="boton-link" href="/">Volver al inicio</a>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import {
+            getAuth,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut,
+            onAuthStateChanged,
+            setPersistence,
+            browserLocalPersistence
+        } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
+            authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
+            projectId: "dbii-ticketing-grupo6",
+            storageBucket: "dbii-ticketing-grupo6.firebasestorage.app",
+            messagingSenderId: "454622640345",
+            appId: "1:454622640345:web:af52e5c7e653c4373926c8"
+        };
+
+        const btnLoginGoogle = document.getElementById('btn-login-google');
+        const btnLogout = document.getElementById('btn-logout');
+        const btnRecargar = document.getElementById('btn-recargar');
+        const linkRegistro = document.getElementById('link-registro');
+        const mensajeAuth = document.getElementById('mensaje-auth');
+        const usuarioActual = document.getElementById('usuario-actual');
+        const resultado = document.getElementById('resultado');
+        const listaEntradas = document.getElementById('lista-entradas');
+        const listaRecibidas = document.getElementById('lista-recibidas');
+        const listaEnviadas = document.getElementById('lista-enviadas');
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+        const persistenceReady = setPersistence(auth, browserLocalPersistence);
+
+        auth.languageCode = 'es';
+
+        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
+        btnLogout.addEventListener('click', cerrarSesion);
+        btnRecargar.addEventListener('click', async () => {
+            try {
+                await cargarTodo();
+                mensajeAuth.textContent = 'Entradas y transferencias actualizadas.';
+            } catch (error) {
+                mostrarResultado(error.message, true);
+            }
+        });
+
+        onAuthStateChanged(auth, async usuario => {
+            reiniciarVista();
+            btnRecargar.disabled = true;
+
+            if (!usuario) {
+                mensajeAuth.textContent = 'No autenticado.';
+                usuarioActual.textContent = 'Sin usuario.';
+                btnLoginGoogle.disabled = false;
+                btnLogout.disabled = true;
+                btnRecargar.disabled = true;
+                return;
+            }
+
+            btnLoginGoogle.disabled = true;
+            btnLogout.disabled = false;
+            usuarioActual.textContent = `Sesión iniciada como ${usuario.displayName || usuario.email}`;
+            mensajeAuth.textContent = 'Verificando registro del usuario...';
+
+            const usuarioResuelto = await resolverUsuario(usuario);
+
+            if (!usuarioResuelto) {
+                return;
+            }
+
+            btnRecargar.disabled = false;
+            mensajeAuth.textContent = 'Usuario autenticado. Cargando entradas...';
+
+            try {
+                await cargarTodo();
+                mensajeAuth.textContent = 'Entradas y transferencias actualizadas.';
+            } catch (error) {
+                mensajeAuth.textContent = 'No se pudieron cargar las entradas y transferencias.';
+                mostrarResultado(error.message, true);
+            }
+        });
+
+        async function ingresarConGoogle() {
+            try {
+                mensajeAuth.textContent = 'Abriendo login con Google...';
+                await persistenceReady;
+                await signInWithPopup(auth, googleProvider);
+            } catch (error) {
+                mensajeAuth.textContent = `Error durante el login con Google: ${error.message}`;
+            }
+        }
+
+        async function cerrarSesion() {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                mostrarResultado(`No se pudo cerrar sesión: ${error.message}`, true);
+            }
+        }
+
+        async function resolverUsuario(usuario) {
+            try {
+                const datos = await peticionAutenticada('/auth/resolve', { method: 'POST' });
+
+                if (datos.code === 'REGISTRO_REQUERIDO') {
+                    mensajeAuth.textContent = 'Necesitás completar el registro antes de gestionar entradas.';
+                    linkRegistro.hidden = false;
+                    return false;
+                }
+
+                if (datos.code === 'LOGIN_OK' || datos.code === 'USUARIO_VINCULADO') {
+                    linkRegistro.hidden = true;
+                    return true;
+                }
+
+                mensajeAuth.textContent = 'Respuesta de identidad no esperada.';
+                return false;
+            } catch (error) {
+                mensajeAuth.textContent = 'No se pudo verificar el usuario.';
+                mostrarResultado(error.message, true);
+                return false;
+            }
+        }
+
+        async function cargarTodo() {
+            if (!auth.currentUser) {
+                throw new Error('No hay usuario autenticado.');
+            }
+
+            btnRecargar.disabled = true;
+
+            try {
+                const [entradas, recibidas, enviadas] = await Promise.all([
+                    peticionAutenticada('/entradas/mias'),
+                    peticionAutenticada('/transferencias/recibidas'),
+                    peticionAutenticada('/transferencias/enviadas')
+                ]);
+
+                if (!Array.isArray(entradas) || !Array.isArray(recibidas) || !Array.isArray(enviadas)) {
+                    throw new Error('El backend devolvió una respuesta inesperada.');
+                }
+
+                const entradasConPendiente = new Set(
+                    enviadas.map(transferencia => transferencia.idEntrada)
+                );
+
+                renderizarEntradas(entradas, entradasConPendiente);
+                renderizarRecibidas(recibidas);
+                renderizarEnviadas(enviadas);
+            } finally {
+                btnRecargar.disabled = false;
+            }
+        }
+
+        function renderizarEntradas(entradas, entradasConPendiente) {
+            listaEntradas.replaceChildren();
+
+            if (entradas.length === 0) {
+                listaEntradas.appendChild(crearMensaje('No tenés entradas asociadas.'));
+                return;
+            }
+
+            entradas.forEach(entrada => {
+                const tarjeta = crearTarjetaEntrada(entrada);
+
+                if (entrada.estadoEntrada === 'EMITIDA') {
+                    if (entradasConPendiente.has(entrada.idEntrada)) {
+                        tarjeta.appendChild(crearDetalle('Esta entrada tiene una transferencia pendiente.'));
+                    } else {
+                        const correo = document.createElement('input');
+                        correo.type = 'email';
+                        correo.maxLength = 120;
+                        correo.placeholder = 'Correo del destinatario';
+
+                        const boton = document.createElement('button');
+                        boton.type = 'button';
+                        boton.textContent = 'Transferir';
+                        boton.addEventListener('click', () => {
+                            solicitarTransferencia(entrada.idEntrada, correo.value, boton);
+                        });
+
+                        tarjeta.appendChild(correo);
+                        tarjeta.appendChild(boton);
+                    }
+                } else {
+                    tarjeta.appendChild(crearDetalle('Esta entrada no está disponible para transferir.'));
+                }
+
+                listaEntradas.appendChild(tarjeta);
+            });
+        }
+
+        function renderizarRecibidas(transferencias) {
+            listaRecibidas.replaceChildren();
+
+            if (transferencias.length === 0) {
+                listaRecibidas.appendChild(crearMensaje('No tenés transferencias pendientes de respuesta.'));
+                return;
+            }
+
+            transferencias.forEach(transferencia => {
+                const tarjeta = crearTarjetaTransferencia(
+                    transferencia,
+                    `Enviada por ${nombreCompleto(transferencia.nombreOrigen, transferencia.apellidoOrigen)}`,
+                    transferencia.correoOrigen
+                );
+
+                const aceptar = document.createElement('button');
+                aceptar.type = 'button';
+                aceptar.textContent = 'Aceptar';
+                aceptar.addEventListener('click', () => {
+                    responderTransferencia(transferencia, 'aceptar', aceptar);
+                });
+
+                const rechazar = document.createElement('button');
+                rechazar.type = 'button';
+                rechazar.textContent = 'Rechazar';
+                rechazar.addEventListener('click', () => {
+                    responderTransferencia(transferencia, 'rechazar', rechazar);
+                });
+
+                tarjeta.appendChild(aceptar);
+                tarjeta.appendChild(rechazar);
+                listaRecibidas.appendChild(tarjeta);
+            });
+        }
+
+        function renderizarEnviadas(transferencias) {
+            listaEnviadas.replaceChildren();
+
+            if (transferencias.length === 0) {
+                listaEnviadas.appendChild(crearMensaje('No tenés transferencias enviadas pendientes.'));
+                return;
+            }
+
+            transferencias.forEach(transferencia => {
+                const tarjeta = crearTarjetaTransferencia(
+                    transferencia,
+                    `Enviada a ${nombreCompleto(transferencia.nombreDestino, transferencia.apellidoDestino)}`,
+                    transferencia.correoDestino
+                );
+
+                const cancelar = document.createElement('button');
+                cancelar.type = 'button';
+                cancelar.textContent = 'Cancelar';
+                cancelar.addEventListener('click', () => {
+                    cancelarTransferencia(transferencia, cancelar);
+                });
+
+                tarjeta.appendChild(cancelar);
+                listaEnviadas.appendChild(tarjeta);
+            });
+        }
+
+        function crearTarjetaEntrada(entrada) {
+            const tarjeta = document.createElement('div');
+            tarjeta.className = 'tarjeta';
+
+            const titulo = document.createElement('h3');
+            titulo.textContent = `${entrada.seleccionLocal} vs ${entrada.seleccionVisitante}`;
+            tarjeta.appendChild(titulo);
+            tarjeta.appendChild(crearDetalle(`Fecha: ${formatearFecha(entrada.fechaHoraInicio)}`));
+            tarjeta.appendChild(crearDetalle(`Sector: ${entrada.nombreSector}`));
+            tarjeta.appendChild(crearDetalle(`Estado: ${entrada.estadoEntrada}`));
+
+            return tarjeta;
+        }
+
+        function crearTarjetaTransferencia(transferencia, persona, correo) {
+            const tarjeta = document.createElement('div');
+            tarjeta.className = 'tarjeta';
+
+            const titulo = document.createElement('h3');
+            titulo.textContent = `${transferencia.seleccionLocal} vs ${transferencia.seleccionVisitante}`;
+            tarjeta.appendChild(titulo);
+            tarjeta.appendChild(crearDetalle(persona));
+            tarjeta.appendChild(crearDetalle(correo));
+            tarjeta.appendChild(crearDetalle(`Fecha del partido: ${formatearFecha(transferencia.fechaHoraInicio)}`));
+            tarjeta.appendChild(crearDetalle(`Sector: ${transferencia.nombreSector}`));
+            tarjeta.appendChild(crearDetalle(`Solicitud: ${formatearFecha(transferencia.fechaSolicitud)}`));
+
+            return tarjeta;
+        }
+
+        function crearDetalle(texto) {
+            const detalle = document.createElement('div');
+            detalle.className = 'detalle';
+            detalle.textContent = texto;
+            return detalle;
+        }
+
+        function crearMensaje(texto) {
+            const mensaje = document.createElement('div');
+            mensaje.textContent = texto;
+            return mensaje;
+        }
+
+        async function solicitarTransferencia(idEntrada, correoIngresado, boton) {
+            const correoDestinatario = correoIngresado.trim();
+
+            if (!correoDestinatario) {
+                mostrarResultado('Ingresá el correo del destinatario.', true);
+                return;
+            }
+
+            await ejecutarAccion(
+                boton,
+                `/entradas/${idEntrada}/transferencias`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ correoDestinatario })
+                },
+                'Transferencia solicitada.'
+            );
+        }
+
+        async function responderTransferencia(transferencia, accion, boton) {
+            await ejecutarAccion(
+                boton,
+                `/entradas/${transferencia.idEntrada}/transferencias/${transferencia.nroMovimiento}/${accion}`,
+                { method: 'POST' },
+                accion === 'aceptar' ? 'Transferencia aceptada.' : 'Transferencia rechazada.'
+            );
+        }
+
+        async function cancelarTransferencia(transferencia, boton) {
+            await ejecutarAccion(
+                boton,
+                `/entradas/${transferencia.idEntrada}/transferencias/${transferencia.nroMovimiento}/cancelar`,
+                { method: 'POST' },
+                'Transferencia cancelada.'
+            );
+        }
+
+        async function ejecutarAccion(boton, url, opciones, mensajeExito) {
+            boton.disabled = true;
+
+            try {
+                await peticionAutenticada(url, opciones);
+                await cargarTodo();
+                mostrarResultado(mensajeExito, false);
+            } catch (error) {
+                mostrarResultado(error.message, true);
+            } finally {
+                boton.disabled = false;
+            }
+        }
+
+        async function peticionAutenticada(url, opciones = {}) {
+            if (!auth.currentUser) {
+                throw new Error('No hay usuario autenticado.');
+            }
+
+            const idToken = await auth.currentUser.getIdToken();
+            const headers = {
+                ...(opciones.headers || {}),
+                'Authorization': `Bearer ${idToken}`
+            };
+
+            const respuesta = await fetch(url, {
+                ...opciones,
+                headers
+            });
+
+            const datos = await leerRespuesta(respuesta);
+
+            if (!respuesta.ok) {
+                const mensaje = datos && datos.message
+                    ? datos.message
+                    : `La operación devolvió HTTP ${respuesta.status}`;
+                throw new Error(mensaje);
+            }
+
+            return datos;
+        }
+
+        async function leerRespuesta(respuesta) {
+            const texto = await respuesta.text();
+
+            if (!texto) {
+                return null;
+            }
+
+            try {
+                return JSON.parse(texto);
+            } catch {
+                return texto;
+            }
+        }
+
+        function mostrarResultado(mensaje, esError) {
+            resultado.hidden = false;
+            resultado.className = esError ? 'panel resultado-error' : 'panel resultado-ok';
+            resultado.textContent = mensaje;
+        }
+
+        function reiniciarVista() {
+            linkRegistro.hidden = true;
+            resultado.hidden = true;
+            listaEntradas.replaceChildren(crearMensaje('Iniciá sesión para consultar tus entradas.'));
+            listaRecibidas.replaceChildren(crearMensaje('Iniciá sesión para consultar solicitudes recibidas.'));
+            listaEnviadas.replaceChildren(crearMensaje('Iniciá sesión para consultar solicitudes enviadas.'));
+        }
+
+        function nombreCompleto(nombre, apellido) {
+            return `${nombre || ''} ${apellido || ''}`.trim();
+        }
+
+        function formatearFecha(fecha) {
+            return fecha ? fecha.replace('T', ' ') : '';
+        }
+    </script>
+</body>
+
+</html>

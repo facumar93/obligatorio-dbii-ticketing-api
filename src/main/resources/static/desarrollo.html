@@ -189,6 +189,48 @@
         <pre id="respuesta-transferencias">Sin consultar.</pre>
     </div>
 
+    <div class="panel">
+        <h2>Administracion de eventos</h2>
+        <div class="detalle">
+            Panel crudo para probar contexto, opciones permitidas y alta transaccional.
+        </div>
+
+        <button id="btn-admin-contexto" disabled>Consultar contexto administrativo</button>
+        <button id="btn-admin-opciones" disabled>Cargar opciones administrativas</button>
+
+        <h3>Respuesta contexto y opciones</h3>
+        <pre id="respuesta-admin-opciones">Sin consultar.</pre>
+
+        <div style="margin-top: 12px;">
+            <label for="fecha-inicio-admin">Inicio</label>
+            <input id="fecha-inicio-admin" type="datetime-local" style="max-width: 220px;">
+
+            <label for="fecha-fin-admin">Fin</label>
+            <input id="fecha-fin-admin" type="datetime-local" style="max-width: 220px;">
+        </div>
+
+        <div style="margin-top: 12px;">
+            <input id="id-estadio-admin" type="number" min="1" placeholder="ID estadio">
+            <input id="id-seleccion-local-admin" type="number" min="1" placeholder="ID seleccion local">
+            <input id="id-seleccion-visitante-admin" type="number" min="1" placeholder="ID seleccion visitante">
+        </div>
+
+        <h3>Sectores JSON</h3>
+        <textarea id="sectores-admin" style="width: 100%; max-width: 720px; min-height: 140px; padding: 8px;">[
+  {
+    "idSector": 1,
+    "precioEntrada": 120.00,
+    "capacidadHabilitada": 80
+  }
+]</textarea>
+
+        <div>
+            <button id="btn-admin-crear-evento" disabled>Crear evento</button>
+        </div>
+
+        <h3>Respuesta alta de evento</h3>
+        <pre id="respuesta-administracion">Sin consultar.</pre>
+    </div>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
         import {
@@ -231,6 +273,15 @@
         const btnRechazarTransferencia = document.getElementById('btn-rechazar-transferencia');
         const inputNroMovimientoTransferencia = document.getElementById('nro-movimiento-transferencia');
 
+        const btnAdminContexto = document.getElementById('btn-admin-contexto');
+        const btnAdminOpciones = document.getElementById('btn-admin-opciones');
+        const btnAdminCrearEvento = document.getElementById('btn-admin-crear-evento');
+        const inputFechaInicioAdmin = document.getElementById('fecha-inicio-admin');
+        const inputFechaFinAdmin = document.getElementById('fecha-fin-admin');
+        const inputIdEstadioAdmin = document.getElementById('id-estadio-admin');
+        const inputIdSeleccionLocalAdmin = document.getElementById('id-seleccion-local-admin');
+        const inputIdSeleccionVisitanteAdmin = document.getElementById('id-seleccion-visitante-admin');
+        const inputSectoresAdmin = document.getElementById('sectores-admin');
         const mensajeAuth = document.getElementById('mensaje-auth');
 
         const app = initializeApp(firebaseConfig);
@@ -257,6 +308,9 @@
         btnAceptarTransferencia.addEventListener('click', () => responderTransferencia('aceptar'));
         btnRechazarTransferencia.addEventListener('click', () => responderTransferencia('rechazar'));
 
+        btnAdminContexto.addEventListener('click', consultarContextoAdministrativo);
+        btnAdminOpciones.addEventListener('click', cargarOpcionesAdministrativas);
+        btnAdminCrearEvento.addEventListener('click', crearEventoAdministrativo);
         onAuthStateChanged(auth, usuario => {
             if (usuario) {
                 mensajeAuth.textContent = 'Autenticado con Firebase.';
@@ -270,6 +324,9 @@
                 btnVerTransferenciasRecibidas.disabled = false;
                 btnAceptarTransferencia.disabled = false;
                 btnRechazarTransferencia.disabled = false;
+                btnAdminContexto.disabled = false;
+                btnAdminOpciones.disabled = false;
+                btnAdminCrearEvento.disabled = false;
 
                 mostrarJson('usuario-firebase', {
                     uid: usuario.uid,
@@ -289,11 +346,16 @@
                 btnVerTransferenciasRecibidas.disabled = true;
                 btnAceptarTransferencia.disabled = true;
                 btnRechazarTransferencia.disabled = true;
+                btnAdminContexto.disabled = true;
+                btnAdminOpciones.disabled = true;
+                btnAdminCrearEvento.disabled = true;
 
                 mostrarTexto('usuario-firebase', 'No autenticado.');
                 mostrarTexto('respuesta-backend', 'Sin verificar.');
                 mostrarTexto('respuesta-catalogo', 'Sin consultar.');
                 mostrarTexto('respuesta-transferencias', 'Sin consultar.');
+                mostrarTexto('respuesta-admin-opciones', 'Sin consultar.');
+                mostrarTexto('respuesta-administracion', 'Sin consultar.');
             }
         });
 
@@ -742,6 +804,125 @@
             }
         }
 
+        async function consultarContextoAdministrativo() {
+            await consultarGetAdministrativo(
+                '/admin/contexto',
+                'respuesta-admin-opciones',
+                'ERROR_FRONTEND_ADMIN_CONTEXTO'
+            );
+        }
+
+        async function cargarOpcionesAdministrativas() {
+            await consultarGetAdministrativo(
+                '/admin/eventos/opciones',
+                'respuesta-admin-opciones',
+                'ERROR_FRONTEND_ADMIN_OPCIONES'
+            );
+        }
+
+        async function consultarGetAdministrativo(url, idRespuesta, codigoError) {
+            if (!auth.currentUser) {
+                mostrarJson(idRespuesta, {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+                const respuesta = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken
+                    }
+                });
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson(idRespuesta, {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson(idRespuesta, {
+                    status: 'ERROR',
+                    code: codigoError,
+                    message: 'No se pudo consultar el endpoint administrativo.',
+                    detail: error.message
+                });
+            }
+        }
+
+        async function crearEventoAdministrativo() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-administracion', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            let sectores;
+
+            try {
+                sectores = JSON.parse(inputSectoresAdmin.value);
+            } catch (error) {
+                mostrarJson('respuesta-administracion', {
+                    status: 'ERROR',
+                    code: 'SECTORES_JSON_INVALIDO',
+                    message: 'El contenido de sectores no es JSON valido.',
+                    detail: error.message
+                });
+                return;
+            }
+
+            if (!Array.isArray(sectores)) {
+                mostrarJson('respuesta-administracion', {
+                    status: 'ERROR',
+                    code: 'SECTORES_JSON_INVALIDO',
+                    message: 'Sectores debe ser una lista JSON.'
+                });
+                return;
+            }
+
+            const body = {
+                fechaHoraInicio: inputFechaInicioAdmin.value,
+                fechaHoraFin: inputFechaFinAdmin.value,
+                idEstadio: Number(inputIdEstadioAdmin.value),
+                idSeleccionLocal: Number(inputIdSeleccionLocalAdmin.value),
+                idSeleccionVisitante: Number(inputIdSeleccionVisitanteAdmin.value),
+                sectores
+            };
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+                const respuesta = await fetch('/admin/eventos', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-administracion', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-administracion', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_ADMIN_CREAR_EVENTO',
+                    message: 'No se pudo crear el evento.',
+                    detail: error.message
+                });
+            }
+        }
         async function cerrarSesion() {
             try {
                 await signOut(auth);
@@ -750,6 +931,8 @@
                 mostrarTexto('respuesta-backend', 'Sin verificar.');
                 mostrarTexto('respuesta-catalogo', 'Sin consultar.');
                 mostrarTexto('respuesta-transferencias', 'Sin consultar.');
+                mostrarTexto('respuesta-admin-opciones', 'Sin consultar.');
+                mostrarTexto('respuesta-administracion', 'Sin consultar.');
             } catch (error) {
                 mostrarJson('respuesta-backend', {
                     status: 'ERROR',

@@ -46,6 +46,22 @@
             font-weight: bold;
         }
 
+        .distintivo-admin {
+            display: inline-block;
+            padding: 8px 12px;
+            margin-left: 6px;
+            color: #7a3e00;
+            background: #ffe0b2;
+            border: 1px solid #d99038;
+            font-weight: bold;
+        }
+
+        .boton-admin {
+            background: #d97706;
+            border-color: #a85600;
+            color: white;
+            font-weight: bold;
+        }
         .mensaje {
             margin-top: 12px;
             font-weight: bold;
@@ -161,11 +177,14 @@
         <div id="mensaje-auth" class="mensaje">No autenticado.</div>
         <div id="usuario-actual" class="detalle">Sin usuario.</div>
 
+        <span id="distintivo-admin" class="distintivo-admin" hidden>Administrador</span>
+
         <div id="aviso-transferencias" class="aviso-transferencias" hidden></div>
 
         <div class="acciones">
             <button id="btn-entradas" class="boton-principal" disabled>Entradas a la venta</button>
             <button id="btn-mis-entradas" class="boton-principal" disabled>Gestionar mis entradas</button>
+            <button id="btn-administrar-eventos" class="boton-admin" hidden>Administrar eventos</button>
             <a id="link-registro" class="boton-link" href="/registro.html" hidden>Completar registro</a>
         </div>
     </div>
@@ -198,12 +217,14 @@
         const btnLogout = document.getElementById('btn-logout');
         const btnEntradas = document.getElementById('btn-entradas');
         const btnMisEntradas = document.getElementById('btn-mis-entradas');
+        const btnAdministrarEventos = document.getElementById('btn-administrar-eventos');
         const linkRegistro = document.getElementById('link-registro');
 
         const tablaCartelera = document.getElementById('tabla-cartelera');
         const mensajeAuth = document.getElementById('mensaje-auth');
         const usuarioActual = document.getElementById('usuario-actual');
         const avisoTransferencias = document.getElementById('aviso-transferencias');
+        const distintivoAdmin = document.getElementById('distintivo-admin');
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -230,13 +251,20 @@
             if (!btnMisEntradas.disabled) {
                 window.location.href = '/mis-entradas.html';
             }
-        });        cargarCartelera();
+        });
+
+        btnAdministrarEventos.addEventListener('click', () => {
+            window.location.href = '/administracion.html';
+        });
+
+        cargarCartelera();
 
         onAuthStateChanged(auth, async usuario => {
             deshabilitarMisEntradas();
             ocultarAvisoTransferencias();
             deshabilitarCompra();
             linkRegistro.hidden = true;
+            ocultarAccesoAdmin();
 
             if (!usuario) {
                 mensajeAuth.textContent = 'No autenticado. Inicia sesion para comprar entradas.';
@@ -362,7 +390,10 @@
                     linkRegistro.hidden = true;
                     habilitarCompra();
                     habilitarMisEntradas();
-                    await cargarAvisoTransferencias(usuario);
+                    await Promise.all([
+                        cargarAvisoTransferencias(usuario),
+                        cargarContextoAdministrativo(usuario)
+                    ]);
                     return;
                 }
 
@@ -372,6 +403,32 @@
             }
         }
 
+        async function cargarContextoAdministrativo(usuario) {
+            try {
+                const idToken = await usuario.getIdToken();
+                const respuesta = await fetch('/admin/contexto', {
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken
+                    }
+                });
+                const datos = await leerRespuesta(respuesta);
+
+                if (!respuesta.ok || datos?.esAdministrador !== true) {
+                    ocultarAccesoAdmin();
+                    return;
+                }
+
+                distintivoAdmin.hidden = false;
+                btnAdministrarEventos.hidden = false;
+            } catch {
+                ocultarAccesoAdmin();
+            }
+        }
+
+        function ocultarAccesoAdmin() {
+            distintivoAdmin.hidden = true;
+            btnAdministrarEventos.hidden = true;
+        }
         async function cerrarSesion() {
             try {
                 await signOut(auth);

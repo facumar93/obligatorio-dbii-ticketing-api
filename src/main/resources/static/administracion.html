@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Administración de eventos - Ticketing Mundial 2026</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 32px;
+            background: #f5f5f5;
+            color: #222;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .subtitulo {
+            color: #555;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+
+        .distintivo-admin {
+            display: inline-block;
+            padding: 8px 12px;
+            color: #7a3e00;
+            background: #ffe0b2;
+            border: 1px solid #d99038;
+            font-weight: bold;
+        }
+
+        .campo {
+            margin-bottom: 14px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        input,
+        select {
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 420px;
+            padding: 8px;
+        }
+
+        button,
+        .boton-link {
+            display: inline-block;
+            padding: 9px 14px;
+            margin-right: 8px;
+            margin-top: 8px;
+            border: 1px solid #777;
+            border-radius: 3px;
+            background: #eee;
+            color: #222;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .boton-admin {
+            background: #d97706;
+            border-color: #a85600;
+            color: white;
+            font-weight: bold;
+        }
+
+        .sector {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 12px;
+            margin-bottom: 10px;
+            background: #fafafa;
+        }
+
+        .sector-encabezado {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .sector-encabezado input {
+            width: auto;
+        }
+
+        .sector-campos {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .sector-campos .campo {
+            min-width: 210px;
+            margin-bottom: 0;
+        }
+
+        .mensaje {
+            margin-top: 14px;
+            padding: 10px;
+            border: 1px solid #bbb;
+            background: #eee;
+        }
+
+        .mensaje-exito {
+            color: #155724;
+            background: #d4edda;
+            border-color: #9ac9a5;
+        }
+
+        .mensaje-error {
+            color: #721c24;
+            background: #f8d7da;
+            border-color: #d6a2a7;
+        }
+
+        .mensaje-info {
+            color: #0b3d66;
+            background: #d9edf7;
+            border-color: #8bbbd3;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Administración de eventos</h1>
+    <div class="subtitulo">Alta de partidos y sectores habilitados para la venta.</div>
+
+    <div class="panel">
+        <span class="distintivo-admin">Área de administrador</span>
+        <div id="estado-identidad" class="mensaje mensaje-info">
+            Verificando sesión y permisos...
+        </div>
+        <a class="boton-link" href="/">Volver al inicio</a>
+    </div>
+
+    <form id="form-evento" class="panel" hidden>
+        <h2>Crear evento vendible</h2>
+
+        <div class="campo">
+            <label for="fecha-inicio">Fecha y hora de inicio</label>
+            <input id="fecha-inicio" type="datetime-local" required>
+        </div>
+
+        <div class="campo">
+            <label for="fecha-fin">Fecha y hora de finalización</label>
+            <input id="fecha-fin" type="datetime-local" required>
+        </div>
+
+        <div class="campo">
+            <label for="estadio">Estadio</label>
+            <select id="estadio" required></select>
+        </div>
+
+        <div class="campo">
+            <label for="seleccion-local">Selección local</label>
+            <select id="seleccion-local" required></select>
+        </div>
+
+        <div class="campo">
+            <label for="seleccion-visitante">Selección visitante</label>
+            <select id="seleccion-visitante" required></select>
+        </div>
+
+        <h3>Sectores habilitados</h3>
+        <div id="sectores">
+            Cargando sectores...
+        </div>
+
+        <button id="btn-crear-evento" class="boton-admin" type="submit">
+            Crear evento
+        </button>
+
+        <div id="resultado-evento" class="mensaje" hidden></div>
+    </form>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import {
+            getAuth,
+            onAuthStateChanged,
+            setPersistence,
+            browserLocalPersistence
+        } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
+            authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
+            projectId: "dbii-ticketing-grupo6",
+            storageBucket: "dbii-ticketing-grupo6.firebasestorage.app",
+            messagingSenderId: "454622640345",
+            appId: "1:454622640345:web:af52e5c7e653c4373926c8"
+        };
+
+        const estadoIdentidad = document.getElementById('estado-identidad');
+        const formEvento = document.getElementById('form-evento');
+        const inputFechaInicio = document.getElementById('fecha-inicio');
+        const inputFechaFin = document.getElementById('fecha-fin');
+        const selectEstadio = document.getElementById('estadio');
+        const selectLocal = document.getElementById('seleccion-local');
+        const selectVisitante = document.getElementById('seleccion-visitante');
+        const contenedorSectores = document.getElementById('sectores');
+        const btnCrearEvento = document.getElementById('btn-crear-evento');
+        const resultadoEvento = document.getElementById('resultado-evento');
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const persistenceReady = setPersistence(auth, browserLocalPersistence);
+
+        let opcionesAdministrativas = null;
+
+        selectEstadio.addEventListener('change', renderizarSectores);
+        formEvento.addEventListener('submit', crearEvento);
+        onAuthStateChanged(auth, async usuario => {
+            formEvento.hidden = true;
+            opcionesAdministrativas = null;
+
+            if (!usuario) {
+                mostrarEstadoIdentidad(
+                    'No hay una sesión iniciada. Volvé al inicio para ingresar.',
+                    'error'
+                );
+                return;
+            }
+
+            mostrarEstadoIdentidad('Verificando permisos administrativos...', 'info');
+
+            await persistenceReady;
+            await inicializarVista(usuario);
+        });
+
+        async function inicializarVista(usuario) {
+            try {
+                const contexto = await consultarBackend('/admin/contexto', usuario);
+
+                if (!contexto.respuesta.ok) {
+                    mostrarEstadoIdentidad(
+                        contexto.datos?.message || 'No se pudo verificar el perfil administrativo.',
+                        'error'
+                    );
+                    return;
+                }
+
+                if (contexto.datos.esAdministrador !== true) {
+                    mostrarEstadoIdentidad(
+                        'Tu usuario no tiene permisos de administrador.',
+                        'error'
+                    );
+                    return;
+                }
+
+                const asignaciones = Array.isArray(contexto.datos.asignacionesVigentes)
+                    ? contexto.datos.asignacionesVigentes
+                    : [];
+
+                const paises = asignaciones.map(asignacion => asignacion.paisSede);
+                const jurisdiccion = paises.length > 0
+                    ? ' Jurisdicción vigente: ' + paises.join(', ') + '.'
+                    : ' No tiene una jurisdicción vigente.';
+
+                mostrarEstadoIdentidad(
+                    'Administrador: '
+                    + contexto.datos.nombre
+                    + ' '
+                    + contexto.datos.apellido
+                    + '.'
+                    + jurisdiccion,
+                    asignaciones.length > 0 ? 'exito' : 'error'
+                );
+
+                if (asignaciones.length === 0) {
+                    return;
+                }
+
+                const opciones = await consultarBackend('/admin/eventos/opciones', usuario);
+
+                if (!opciones.respuesta.ok) {
+                    mostrarEstadoIdentidad(
+                        opciones.datos?.message || 'No se pudieron cargar las opciones del formulario.',
+                        'error'
+                    );
+                    return;
+                }
+
+                opcionesAdministrativas = opciones.datos;
+                cargarFormulario();
+                formEvento.hidden = false;
+            } catch (error) {
+                mostrarEstadoIdentidad(
+                    'No se pudo preparar la administración de eventos: ' + error.message,
+                    'error'
+                );
+            }
+        }
+
+        async function consultarBackend(url, usuario) {
+            const idToken = await usuario.getIdToken();
+            const respuesta = await fetch(url, {
+                headers: {
+                    'Authorization': 'Bearer ' + idToken
+                }
+            });
+            const datos = await leerRespuesta(respuesta);
+
+            return { respuesta, datos };
+        }
+
+        function cargarFormulario() {
+            cargarEstadios();
+            cargarSelecciones();
+            renderizarSectores();
+        }
+
+        function cargarEstadios() {
+            selectEstadio.replaceChildren();
+            const estadios = Array.isArray(opcionesAdministrativas.estadios)
+                ? opcionesAdministrativas.estadios
+                : [];
+
+            if (estadios.length === 0) {
+                const opcion = document.createElement('option');
+                opcion.value = '';
+                opcion.textContent = 'No hay estadios disponibles';
+                selectEstadio.appendChild(opcion);
+                selectEstadio.disabled = true;
+                btnCrearEvento.disabled = true;
+                return;
+            }
+
+            selectEstadio.disabled = false;
+
+            estadios.forEach(estadio => {
+                const opcion = document.createElement('option');
+                opcion.value = String(estadio.idEstadio);
+                opcion.textContent =
+                    estadio.nombre + ' — ' + estadio.ciudad + ' (' + estadio.paisSede + ')';
+                selectEstadio.appendChild(opcion);
+            });
+        }
+
+        function cargarSelecciones() {
+            selectLocal.replaceChildren();
+            selectVisitante.replaceChildren();
+
+            const selecciones = Array.isArray(opcionesAdministrativas.selecciones)
+                ? opcionesAdministrativas.selecciones
+                : [];
+
+            selecciones.forEach(seleccion => {
+                const opcionLocal = document.createElement('option');
+                opcionLocal.value = String(seleccion.idSeleccion);
+                opcionLocal.textContent = seleccion.nombre;
+
+                const opcionVisitante = opcionLocal.cloneNode(true);
+
+                selectLocal.appendChild(opcionLocal);
+                selectVisitante.appendChild(opcionVisitante);
+            });
+
+            if (selectVisitante.options.length > 1) {
+                selectVisitante.selectedIndex = 1;
+            }
+        }
+
+        function renderizarSectores() {
+            contenedorSectores.replaceChildren();
+
+            if (!opcionesAdministrativas) {
+                contenedorSectores.textContent = 'Sin opciones cargadas.';
+                return;
+            }
+
+            const idEstadio = Number(selectEstadio.value);
+            const estadios = Array.isArray(opcionesAdministrativas.estadios)
+                ? opcionesAdministrativas.estadios
+                : [];
+            const estadio = estadios.find(item => item.idEstadio === idEstadio);
+
+            if (!estadio || !Array.isArray(estadio.sectores) || estadio.sectores.length === 0) {
+                contenedorSectores.textContent =
+                    'El estadio seleccionado no tiene sectores disponibles.';
+                btnCrearEvento.disabled = true;
+                return;
+            }
+
+            btnCrearEvento.disabled = false;
+
+            estadio.sectores.forEach(sector => {
+                contenedorSectores.appendChild(crearControlSector(sector));
+            });
+        }
+
+        function crearControlSector(sector) {
+            const bloque = document.createElement('div');
+            bloque.className = 'sector';
+            bloque.dataset.idSector = String(sector.idSector);
+            bloque.dataset.capacidadMax = String(sector.capacidadMax);
+
+            const encabezado = document.createElement('div');
+            encabezado.className = 'sector-encabezado';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'sector-habilitado';
+
+            const titulo = document.createElement('span');
+            titulo.textContent =
+                sector.nombre + ' — capacidad máxima: ' + sector.capacidadMax;
+
+            encabezado.appendChild(checkbox);
+            encabezado.appendChild(titulo);
+
+            const campos = document.createElement('div');
+            campos.className = 'sector-campos';
+
+            const campoPrecio = crearCampoNumerico(
+                'Precio de entrada',
+                'precio-sector',
+                '0.01',
+                '0'
+            );
+            const campoCapacidad = crearCampoNumerico(
+                'Capacidad habilitada',
+                'capacidad-sector',
+                '1',
+                '1'
+            );
+
+            campoPrecio.input.disabled = true;
+            campoCapacidad.input.disabled = true;
+            campoCapacidad.input.max = String(sector.capacidadMax);
+
+            checkbox.addEventListener('change', () => {
+                const habilitado = checkbox.checked;
+                campoPrecio.input.disabled = !habilitado;
+                campoCapacidad.input.disabled = !habilitado;
+
+                if (!habilitado) {
+                    campoPrecio.input.value = '';
+                    campoCapacidad.input.value = '';
+                }
+            });
+
+            campos.appendChild(campoPrecio.contenedor);
+            campos.appendChild(campoCapacidad.contenedor);
+
+            bloque.appendChild(encabezado);
+            bloque.appendChild(campos);
+
+            return bloque;
+        }
+
+        function crearCampoNumerico(etiqueta, clase, paso, minimo) {
+            const contenedor = document.createElement('div');
+            contenedor.className = 'campo';
+
+            const label = document.createElement('label');
+            label.textContent = etiqueta;
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.className = clase;
+            input.step = paso;
+            input.min = minimo;
+
+            contenedor.appendChild(label);
+            contenedor.appendChild(input);
+
+            return { contenedor, input };
+        }
+        async function crearEvento(eventoSubmit) {
+            eventoSubmit.preventDefault();
+            ocultarResultado();
+
+            const errorGeneral = validarDatosGenerales();
+
+            if (errorGeneral) {
+                mostrarResultado(errorGeneral, 'error');
+                return;
+            }
+
+            const sectores = obtenerSectoresSeleccionados();
+
+            if (sectores.error) {
+                mostrarResultado(sectores.error, 'error');
+                return;
+            }
+
+            const body = {
+                fechaHoraInicio: inputFechaInicio.value,
+                fechaHoraFin: inputFechaFin.value,
+                idEstadio: Number(selectEstadio.value),
+                idSeleccionLocal: Number(selectLocal.value),
+                idSeleccionVisitante: Number(selectVisitante.value),
+                sectores: sectores.lineas
+            };
+
+            btnCrearEvento.disabled = true;
+            btnCrearEvento.textContent = 'Creando evento...';
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+                const respuesta = await fetch('/admin/eventos', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+                const datos = await leerRespuesta(respuesta);
+
+                if (!respuesta.ok) {
+                    mostrarResultado(
+                        datos?.message || 'No se pudo crear el evento.',
+                        'error'
+                    );
+                    return;
+                }
+
+                const nombreLocal = selectLocal.options[selectLocal.selectedIndex].textContent;
+                const nombreVisitante =
+                    selectVisitante.options[selectVisitante.selectedIndex].textContent;
+
+                mostrarResultado(
+                    'Evento creado correctamente. Se habilitaron '
+                    + datos.sectoresHabilitados
+                    + ' sectores para '
+                    + nombreLocal
+                    + ' vs '
+                    + nombreVisitante
+                    + '.',
+                    'exito'
+                );
+            } catch (error) {
+                mostrarResultado(
+                    'No se pudo crear el evento: ' + error.message,
+                    'error'
+                );
+            } finally {
+                btnCrearEvento.disabled = false;
+                btnCrearEvento.textContent = 'Crear evento';
+            }
+        }
+
+        function validarDatosGenerales() {
+            if (!inputFechaInicio.value || !inputFechaFin.value) {
+                return 'Indicá la fecha y hora de inicio y finalización.';
+            }
+
+            if (inputFechaFin.value <= inputFechaInicio.value) {
+                return 'La fecha de finalización debe ser posterior al inicio.';
+            }
+
+            if (!selectEstadio.value) {
+                return 'Seleccioná un estadio.';
+            }
+
+            if (!selectLocal.value || !selectVisitante.value) {
+                return 'Seleccioná las dos selecciones.';
+            }
+
+            if (selectLocal.value === selectVisitante.value) {
+                return 'Las selecciones local y visitante deben ser distintas.';
+            }
+
+            return null;
+        }
+
+        function obtenerSectoresSeleccionados() {
+            const bloques = Array.from(contenedorSectores.querySelectorAll('.sector'));
+            const seleccionados = bloques.filter(
+                bloque => bloque.querySelector('.sector-habilitado').checked
+            );
+
+            if (seleccionados.length === 0) {
+                return { error: 'Seleccioná al menos un sector para el evento.' };
+            }
+
+            const lineas = [];
+
+            for (const bloque of seleccionados) {
+                const inputPrecio = bloque.querySelector('.precio-sector');
+                const inputCapacidad = bloque.querySelector('.capacidad-sector');
+                const precio = Number(inputPrecio.value);
+                const capacidad = Number(inputCapacidad.value);
+                const capacidadMax = Number(bloque.dataset.capacidadMax);
+
+                if (inputPrecio.value === '' || !Number.isFinite(precio) || precio < 0) {
+                    return { error: 'Ingresá un precio válido para cada sector marcado.' };
+                }
+
+                if (!Number.isInteger(capacidad) || capacidad <= 0) {
+                    return {
+                        error: 'Ingresá una capacidad entera y positiva para cada sector marcado.'
+                    };
+                }
+
+                if (capacidad > capacidadMax) {
+                    return {
+                        error: 'La capacidad habilitada no puede superar la capacidad máxima del sector.'
+                    };
+                }
+
+                lineas.push({
+                    idSector: Number(bloque.dataset.idSector),
+                    precioEntrada: precio,
+                    capacidadHabilitada: capacidad
+                });
+            }
+
+            return { lineas };
+        }
+
+        function mostrarEstadoIdentidad(mensaje, tipo) {
+            estadoIdentidad.textContent = mensaje;
+            estadoIdentidad.className = 'mensaje ' + claseMensaje(tipo);
+        }
+
+        function mostrarResultado(mensaje, tipo) {
+            resultadoEvento.textContent = mensaje;
+            resultadoEvento.className = 'mensaje ' + claseMensaje(tipo);
+            resultadoEvento.hidden = false;
+        }
+
+        function ocultarResultado() {
+            resultadoEvento.hidden = true;
+            resultadoEvento.textContent = '';
+        }
+
+        function claseMensaje(tipo) {
+            if (tipo === 'exito') {
+                return 'mensaje-exito';
+            }
+
+            if (tipo === 'error') {
+                return 'mensaje-error';
+            }
+
+            return 'mensaje-info';
+        }
+
+        async function leerRespuesta(respuesta) {
+            const texto = await respuesta.text();
+
+            if (!texto) {
+                return null;
+            }
+
+            try {
+                return JSON.parse(texto);
+            } catch {
+                return null;
+            }
+        }
+    </script>
+</body>
+
+</html>

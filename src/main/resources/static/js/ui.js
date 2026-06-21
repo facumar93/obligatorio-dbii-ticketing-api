@@ -22,7 +22,7 @@ export function el(tag, attrs = {}, children = []) {
 }
 
 export function clear(node) { node.replaceChildren(); return node; }
-export function mount(node, ...children) { clear(node); node.append(...children.filter(Boolean)); return node; }
+export function mount(node, ...children) { clear(node); node.append(...children.flat(Infinity).filter(Boolean)); return node; }
 
 // --- Formato ---
 const fmtMoney = new Intl.NumberFormat("es-UY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

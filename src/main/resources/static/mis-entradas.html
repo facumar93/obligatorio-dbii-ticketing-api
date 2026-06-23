@@ -94,6 +94,43 @@
             margin-top: 8px;
         }
 
+        .qr-panel {
+            max-width: 320px;
+            margin-top: 14px;
+            padding: 14px;
+            border: 1px solid #777;
+            background: white;
+            text-align: center;
+        }
+
+        .qr-imagen {
+            width: 220px;
+            min-height: 220px;
+            margin: 10px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #ccc;
+            background: #fff;
+        }
+
+        .qr-imagen img {
+            width: 200px;
+            height: 200px;
+            image-rendering: pixelated;
+        }
+
+        .qr-contador {
+            font-size: 20px;
+            font-weight: bold;
+            margin: 8px 0;
+        }
+
+        .qr-mensaje {
+            margin-top: 8px;
+            color: #555;
+        }
+
         [hidden] {
             display: none !important;
         }
@@ -168,6 +205,9 @@
         const listaRecibidas = document.getElementById('lista-recibidas');
         const listaEnviadas = document.getElementById('lista-enviadas');
 
+        let qrActivo = null;
+        let qrLibPromise = null;
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const googleProvider = new GoogleAuthProvider();
@@ -183,6 +223,17 @@
                 mensajeAuth.textContent = 'Entradas y transferencias actualizadas.';
             } catch (error) {
                 mostrarResultado(error.message, true);
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (
+                document.visibilityState === 'visible'
+                && qrActivo
+                && qrActivo.timerId !== null
+                && !qrActivo.terminal
+            ) {
+                renovarQr(qrActivo);
             }
         });
 
@@ -295,6 +346,7 @@
         }
 
         function renderizarEntradas(entradas, entradasConPendiente) {
+            cerrarQrActivo();
             listaEntradas.replaceChildren();
 
             if (entradas.length === 0) {
@@ -306,6 +358,13 @@
                 const tarjeta = crearTarjetaEntrada(entrada);
 
                 if (entrada.estadoEntrada === 'EMITIDA') {
+                    const botonQr = document.createElement('button');
+                    botonQr.type = 'button';
+                    botonQr.textContent = 'Mostrar QR';
+                    botonQr.addEventListener('click', () => {
+                        mostrarQr(entrada, tarjeta, botonQr);
+                    });
+                    tarjeta.appendChild(botonQr);
                     if (entradasConPendiente.has(entrada.idEntrada)) {
                         tarjeta.appendChild(crearDetalle('Esta entrada tiene una transferencia pendiente.'));
                     } else {
@@ -406,6 +465,242 @@
             tarjeta.appendChild(crearDetalle(`Estado: ${entrada.estadoEntrada}`));
 
             return tarjeta;
+        }
+
+        async function mostrarQr(entrada, tarjeta, boton) {
+            if (qrActivo && qrActivo.idEntrada === entrada.idEntrada) {
+                cerrarQrActivo();
+                return;
+            }
+
+            cerrarQrActivo();
+
+            const panel = document.createElement('div');
+            panel.className = 'qr-panel';
+
+            const titulo = document.createElement('strong');
+            titulo.textContent = 'QR dinámico de la entrada';
+
+            const imagen = document.createElement('div');
+            imagen.className = 'qr-imagen';
+            imagen.textContent = 'Cargando imagen QR...';
+
+            const contador = document.createElement('div');
+            contador.className = 'qr-contador';
+            contador.textContent = '—';
+
+            const mensaje = document.createElement('div');
+            mensaje.className = 'qr-mensaje';
+            mensaje.textContent = 'Preparando código vigente...';
+
+            const cerrar = document.createElement('button');
+            cerrar.type = 'button';
+            cerrar.textContent = 'Ocultar QR';
+            cerrar.addEventListener('click', cerrarQrActivo);
+
+            panel.appendChild(titulo);
+            panel.appendChild(imagen);
+            panel.appendChild(contador);
+            panel.appendChild(mensaje);
+            panel.appendChild(cerrar);
+            tarjeta.appendChild(panel);
+
+            boton.textContent = 'Ocultar QR';
+            qrActivo = {
+                idEntrada: entrada.idEntrada,
+                boton,
+                panel,
+                imagen,
+                contador,
+                mensaje,
+                timerId: null,
+                abortController: null,
+                terminal: false
+            };
+
+            try {
+                await cargarLibreriaQr();
+
+                if (qrActivo && qrActivo.idEntrada === entrada.idEntrada) {
+                    await renovarQr(qrActivo);
+                }
+            } catch (error) {
+                if (!qrActivo || qrActivo.idEntrada !== entrada.idEntrada) {
+                    return;
+                }
+
+                qrActivo.imagen.textContent = 'No se pudo generar la imagen QR.';
+                qrActivo.contador.textContent = '—';
+                qrActivo.mensaje.textContent = 'La librería QR no está disponible.';
+            }
+        }
+
+        async function cargarLibreriaQr() {
+            if (typeof window.qrcode === 'function') {
+                return;
+            }
+
+            if (!qrLibPromise) {
+                qrLibPromise = new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+                    script.onload = resolve;
+                    script.onerror = () => reject(new Error('No se pudo cargar qrcode-generator.'));
+                    document.head.appendChild(script);
+                }).catch(error => {
+                    qrLibPromise = null;
+                    throw error;
+                });
+            }
+
+            await qrLibPromise;
+        }
+
+        async function renovarQr(ciclo) {
+            if (qrActivo !== ciclo || !auth.currentUser || ciclo.terminal) {
+                return;
+            }
+
+            limpiarTimerQr(ciclo);
+
+            if (ciclo.abortController) {
+                ciclo.abortController.abort();
+            }
+
+            const abortController = new AbortController();
+            ciclo.abortController = abortController;
+            ciclo.contador.textContent = '—';
+            ciclo.mensaje.textContent = 'Solicitando código vigente...';
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+
+                if (qrActivo !== ciclo || abortController.signal.aborted) {
+                    return;
+                }
+
+                const inicioSolicitud = performance.now();
+                const respuesta = await fetch(`/entradas/${ciclo.idEntrada}/qr`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    signal: abortController.signal
+                });
+                const datos = await leerRespuesta(respuesta);
+
+                if (qrActivo !== ciclo || abortController.signal.aborted) {
+                    return;
+                }
+
+                if (!respuesta.ok) {
+                    if ([403, 404, 409].includes(respuesta.status)) {
+                        detenerQrNoDisponible(ciclo);
+                        return;
+                    }
+
+                    const mensaje = datos && datos.message
+                        ? datos.message
+                        : `No se pudo renovar el QR (HTTP ${respuesta.status}).`;
+                    throw new Error(mensaje);
+                }
+
+                if (!datos || !datos.codigoQr || !datos.generadoEn || !datos.expiraEn) {
+                    throw new Error('El backend devolvió una respuesta QR incompleta.');
+                }
+
+                dibujarQr(ciclo, datos.codigoQr);
+                iniciarContadorQr(ciclo, datos.generadoEn, datos.expiraEn, inicioSolicitud);
+                ciclo.mensaje.textContent = 'El código se renueva automáticamente al vencer.';
+            } catch (error) {
+                if (error.name === 'AbortError' || qrActivo !== ciclo) {
+                    return;
+                }
+
+                limpiarTimerQr(ciclo);
+                ciclo.imagen.textContent = 'No se pudo generar la imagen QR.';
+                ciclo.contador.textContent = '—';
+                ciclo.mensaje.textContent = error.message;
+            } finally {
+                if (qrActivo === ciclo && ciclo.abortController === abortController) {
+                    ciclo.abortController = null;
+                }
+            }
+        }
+
+        function dibujarQr(ciclo, codigoQr) {
+            const qr = window.qrcode(0, 'M');
+            qr.addData(codigoQr);
+            qr.make();
+
+            const imagen = document.createElement('img');
+            imagen.src = qr.createDataURL(5, 8);
+            imagen.alt = 'Código QR dinámico de la entrada';
+            ciclo.imagen.replaceChildren(imagen);
+        }
+
+        function iniciarContadorQr(ciclo, generadoEn, expiraEn, inicioSolicitud) {
+            const duracionServidor = Date.parse(expiraEn) - Date.parse(generadoEn);
+
+            if (!Number.isFinite(duracionServidor) || duracionServidor <= 0) {
+                throw new Error('El backend devolvió una vigencia QR inválida.');
+            }
+
+            const actualizar = () => {
+                if (qrActivo !== ciclo) {
+                    limpiarTimerQr(ciclo);
+                    return;
+                }
+
+                const restanteMs = Math.max(
+                    0,
+                    duracionServidor - (performance.now() - inicioSolicitud)
+                );
+                ciclo.contador.textContent = `${Math.ceil(restanteMs / 1000)} s`;
+
+                if (restanteMs <= 0) {
+                    limpiarTimerQr(ciclo);
+                    renovarQr(ciclo);
+                }
+            };
+
+            ciclo.timerId = window.setInterval(actualizar, 250);
+            actualizar();
+        }
+
+        function detenerQrNoDisponible(ciclo) {
+            limpiarTimerQr(ciclo);
+            ciclo.terminal = true;
+            ciclo.imagen.textContent = 'QR no disponible.';
+            ciclo.contador.textContent = '—';
+            ciclo.mensaje.textContent = 'La entrada ya no está disponible para mostrar QR.';
+            ciclo.boton.disabled = true;
+            ciclo.boton.textContent = 'QR no disponible';
+        }
+
+        function limpiarTimerQr(ciclo) {
+            if (ciclo.timerId !== null) {
+                window.clearInterval(ciclo.timerId);
+                ciclo.timerId = null;
+            }
+        }
+
+        function cerrarQrActivo() {
+            if (!qrActivo) {
+                return;
+            }
+
+            const ciclo = qrActivo;
+            qrActivo = null;
+            limpiarTimerQr(ciclo);
+
+            if (ciclo.abortController) {
+                ciclo.abortController.abort();
+            }
+
+            ciclo.panel.remove();
+            ciclo.boton.textContent = ciclo.terminal ? 'QR no disponible' : 'Mostrar QR';
+            ciclo.boton.disabled = ciclo.terminal;
         }
 
         function crearTarjetaTransferencia(transferencia, persona, correo) {
@@ -538,6 +833,7 @@
         }
 
         function reiniciarVista() {
+            cerrarQrActivo();
             linkRegistro.hidden = true;
             resultado.hidden = true;
             listaEntradas.replaceChildren(crearMensaje('Iniciá sesión para consultar tus entradas.'));

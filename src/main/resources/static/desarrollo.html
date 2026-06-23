@@ -231,6 +231,21 @@
         <h3>Respuesta alta de evento</h3>
         <pre id="respuesta-administracion">Sin consultar.</pre>
     </div>
+    <div class="panel">
+        <h2>Token QR dinámico</h2>
+        <div class="detalle">
+            Prueba técnica del motor QR. Devuelve el token crudo; todavía no genera una imagen.
+        </div>
+
+        <div style="margin-top: 12px;">
+            <input id="id-entrada-qr" type="number" min="1" placeholder="ID entrada">
+            <button id="btn-generar-token-qr" disabled>Generar token QR</button>
+        </div>
+
+        <h3>Respuesta generación QR</h3>
+        <pre id="respuesta-qr">Sin consultar.</pre>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
         import {
@@ -282,6 +297,8 @@
         const inputIdSeleccionLocalAdmin = document.getElementById('id-seleccion-local-admin');
         const inputIdSeleccionVisitanteAdmin = document.getElementById('id-seleccion-visitante-admin');
         const inputSectoresAdmin = document.getElementById('sectores-admin');
+        const btnGenerarTokenQr = document.getElementById('btn-generar-token-qr');
+        const inputIdEntradaQr = document.getElementById('id-entrada-qr');
         const mensajeAuth = document.getElementById('mensaje-auth');
 
         const app = initializeApp(firebaseConfig);
@@ -311,6 +328,7 @@
         btnAdminContexto.addEventListener('click', consultarContextoAdministrativo);
         btnAdminOpciones.addEventListener('click', cargarOpcionesAdministrativas);
         btnAdminCrearEvento.addEventListener('click', crearEventoAdministrativo);
+        btnGenerarTokenQr.addEventListener('click', generarTokenQr);
         onAuthStateChanged(auth, usuario => {
             if (usuario) {
                 mensajeAuth.textContent = 'Autenticado con Firebase.';
@@ -327,6 +345,7 @@
                 btnAdminContexto.disabled = false;
                 btnAdminOpciones.disabled = false;
                 btnAdminCrearEvento.disabled = false;
+                btnGenerarTokenQr.disabled = false;
 
                 mostrarJson('usuario-firebase', {
                     uid: usuario.uid,
@@ -349,6 +368,7 @@
                 btnAdminContexto.disabled = true;
                 btnAdminOpciones.disabled = true;
                 btnAdminCrearEvento.disabled = true;
+                btnGenerarTokenQr.disabled = true;
 
                 mostrarTexto('usuario-firebase', 'No autenticado.');
                 mostrarTexto('respuesta-backend', 'Sin verificar.');
@@ -356,6 +376,7 @@
                 mostrarTexto('respuesta-transferencias', 'Sin consultar.');
                 mostrarTexto('respuesta-admin-opciones', 'Sin consultar.');
                 mostrarTexto('respuesta-administracion', 'Sin consultar.');
+                mostrarTexto('respuesta-qr', 'Sin consultar.');
             }
         });
 
@@ -804,6 +825,56 @@
             }
         }
 
+        async function generarTokenQr() {
+            if (!auth.currentUser) {
+                mostrarJson('respuesta-qr', {
+                    status: 'ERROR',
+                    code: 'SIN_SESION_FIREBASE',
+                    message: 'No hay usuario autenticado en Firebase.'
+                });
+                return;
+            }
+
+            const idEntrada = Number(inputIdEntradaQr.value);
+
+            if (!Number.isInteger(idEntrada) || idEntrada <= 0) {
+                mostrarJson('respuesta-qr', {
+                    status: 'ERROR',
+                    code: 'ID_ENTRADA_REQUERIDO',
+                    message: 'Ingresa un id de entrada válido.'
+                });
+                return;
+            }
+
+            btnGenerarTokenQr.disabled = true;
+
+            try {
+                const idToken = await auth.currentUser.getIdToken();
+                const respuesta = await fetch('/entradas/' + idEntrada + '/qr', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken
+                    }
+                });
+                const datos = await leerRespuesta(respuesta);
+
+                mostrarJson('respuesta-qr', {
+                    httpStatus: respuesta.status,
+                    ok: respuesta.ok,
+                    body: datos
+                });
+            } catch (error) {
+                mostrarJson('respuesta-qr', {
+                    status: 'ERROR',
+                    code: 'ERROR_FRONTEND_GENERAR_QR',
+                    message: 'No se pudo generar el token QR.',
+                    detail: error.message
+                });
+            } finally {
+                btnGenerarTokenQr.disabled = !auth.currentUser;
+            }
+        }
+
         async function consultarContextoAdministrativo() {
             await consultarGetAdministrativo(
                 '/admin/contexto',
@@ -933,6 +1004,7 @@
                 mostrarTexto('respuesta-transferencias', 'Sin consultar.');
                 mostrarTexto('respuesta-admin-opciones', 'Sin consultar.');
                 mostrarTexto('respuesta-administracion', 'Sin consultar.');
+                mostrarTexto('respuesta-qr', 'Sin consultar.');
             } catch (error) {
                 mostrarJson('respuesta-backend', {
                     status: 'ERROR',

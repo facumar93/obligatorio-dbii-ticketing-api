@@ -91,6 +91,54 @@ public final class QrTokenService {
         return "v1." + idEntrada + "." + ventana + "." + firmaTemporal;
     }
 
+    public TokenQrParseado parsearToken(String codigoQr) throws QrTokenInvalidoException {
+        if (codigoQr == null || codigoQr.isBlank()) {
+            throw new QrTokenInvalidoException("El codigo QR no puede estar vacio");
+        }
+
+        String[] partes = codigoQr.trim().split("\\.", -1);
+
+        if (partes.length != 4 || !"v1".equals(partes[0])) {
+            throw new QrTokenInvalidoException("El codigo QR no tiene un formato reconocido");
+        }
+
+        try {
+            int idEntrada = Integer.parseInt(partes[1]);
+            long ventana = Long.parseLong(partes[2]);
+
+            if (idEntrada <= 0 || ventana < 0 || partes[3].isBlank()) {
+                throw new QrTokenInvalidoException("El codigo QR contiene valores invalidos");
+            }
+
+            BASE64_URL_DECODER.decode(partes[3]);
+            return new TokenQrParseado(idEntrada, ventana, partes[3]);
+        } catch (IllegalArgumentException e) {
+            throw new QrTokenInvalidoException("El codigo QR contiene valores invalidos");
+        }
+    }
+
+    public boolean validarFirmaToken(
+            TokenQrParseado token,
+            String semilla,
+            String nonce
+    ) {
+
+        if (token == null || semilla == null || nonce == null) {
+            return false;
+        }
+
+        byte[] firmaEsperada = firmar(
+                payloadToken(token.idEntrada(), token.ventana(), semilla, nonce)
+        );
+
+        try {
+            byte[] firmaRecibida = BASE64_URL_DECODER.decode(token.firmaTemporal());
+            return MessageDigest.isEqual(firmaEsperada, firmaRecibida);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
     private String generarValorAleatorio(int cantidadBytes) {
         byte[] valor = new byte[cantidadBytes];
         SECURE_RANDOM.nextBytes(valor);
@@ -132,9 +180,23 @@ public final class QrTokenService {
     ) {
     }
 
+    public record TokenQrParseado(
+            int idEntrada,
+            long ventana,
+            String firmaTemporal
+    ) {
+    }
+
     public static final class QrConfigurationException extends Exception {
 
         public QrConfigurationException(String message) {
+            super(message);
+        }
+    }
+
+    public static final class QrTokenInvalidoException extends Exception {
+
+        public QrTokenInvalidoException(String message) {
             super(message);
         }
     }

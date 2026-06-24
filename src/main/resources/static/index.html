@@ -178,6 +178,7 @@
         <div id="usuario-actual" class="detalle">Sin usuario.</div>
 
         <span id="distintivo-admin" class="distintivo-admin" hidden>Administrador</span>
+        <span id="distintivo-validador" class="distintivo-admin" hidden>Validador</span>
 
         <div id="aviso-transferencias" class="aviso-transferencias" hidden></div>
 
@@ -185,6 +186,7 @@
             <button id="btn-entradas" class="boton-principal" disabled>Entradas a la venta</button>
             <button id="btn-mis-entradas" class="boton-principal" disabled>Gestionar mis entradas</button>
             <button id="btn-administrar-eventos" class="boton-admin" hidden>Administrar eventos</button>
+            <button id="btn-validar-ingresos" class="boton-admin" hidden>Validar ingresos</button>
             <a id="link-registro" class="boton-link" href="/registro.html" hidden>Completar registro</a>
         </div>
     </div>
@@ -218,6 +220,7 @@
         const btnEntradas = document.getElementById('btn-entradas');
         const btnMisEntradas = document.getElementById('btn-mis-entradas');
         const btnAdministrarEventos = document.getElementById('btn-administrar-eventos');
+        const btnValidarIngresos = document.getElementById('btn-validar-ingresos');
         const linkRegistro = document.getElementById('link-registro');
 
         const tablaCartelera = document.getElementById('tabla-cartelera');
@@ -225,6 +228,7 @@
         const usuarioActual = document.getElementById('usuario-actual');
         const avisoTransferencias = document.getElementById('aviso-transferencias');
         const distintivoAdmin = document.getElementById('distintivo-admin');
+        const distintivoValidador = document.getElementById('distintivo-validador');
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -257,6 +261,10 @@
             window.location.href = '/administracion.html';
         });
 
+        btnValidarIngresos.addEventListener('click', () => {
+            window.location.href = '/validacion.html';
+        });
+
         cargarCartelera();
 
         onAuthStateChanged(auth, async usuario => {
@@ -265,6 +273,7 @@
             deshabilitarCompra();
             linkRegistro.hidden = true;
             ocultarAccesoAdmin();
+            ocultarAccesoValidador();
 
             if (!usuario) {
                 mensajeAuth.textContent = 'No autenticado. Inicia sesion para comprar entradas.';
@@ -392,7 +401,8 @@
                     habilitarMisEntradas();
                     await Promise.all([
                         cargarAvisoTransferencias(usuario),
-                        cargarContextoAdministrativo(usuario)
+                        cargarContextoAdministrativo(usuario),
+                        cargarContextoValidacion(usuario)
                     ]);
                     return;
                 }
@@ -429,6 +439,36 @@
             distintivoAdmin.hidden = true;
             btnAdministrarEventos.hidden = true;
         }
+
+        async function cargarContextoValidacion(usuario) {
+            try {
+                const idToken = await usuario.getIdToken();
+                const respuesta = await fetch('/validacion/contexto', {
+                    headers: {
+                        'Authorization': 'Bearer ' + idToken
+                    }
+                });
+                const datos = await leerRespuesta(respuesta);
+
+                if (!respuesta.ok
+                        || datos?.code !== 'CONTEXTO_VALIDACION_OK'
+                        || !Array.isArray(datos?.asignaciones)) {
+                    ocultarAccesoValidador();
+                    return;
+                }
+
+                distintivoValidador.hidden = false;
+                btnValidarIngresos.hidden = false;
+            } catch {
+                ocultarAccesoValidador();
+            }
+        }
+
+        function ocultarAccesoValidador() {
+            distintivoValidador.hidden = true;
+            btnValidarIngresos.hidden = true;
+        }
+
         async function cerrarSesion() {
             try {
                 await signOut(auth);

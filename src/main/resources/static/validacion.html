@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Validacion de ingreso</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            background: #111416;
+            color: #f3f3f3;
+        }
+
+        main {
+            max-width: 760px;
+            margin: 28px auto;
+            padding: 0 16px;
+        }
+
+        section {
+            border: 1px solid #3d4347;
+            background: #191d20;
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+
+        h1, h2 {
+            margin-top: 0;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin: 14px 0 6px;
+        }
+
+        select, textarea, button {
+            box-sizing: border-box;
+            font: inherit;
+        }
+
+        select, textarea {
+            width: 100%;
+            padding: 10px;
+            color: #fff;
+            background: #292e32;
+            border: 1px solid #686f74;
+        }
+
+        textarea {
+            min-height: 125px;
+            resize: vertical;
+            overflow-wrap: anywhere;
+        }
+
+        button, a.boton {
+            display: inline-block;
+            margin-top: 14px;
+            padding: 10px 14px;
+            color: #fff;
+            background: #a45a00;
+            border: 1px solid #d07a13;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: .55;
+            cursor: default;
+        }
+
+        .estado {
+            padding: 12px;
+            border: 1px solid #61686d;
+            background: #24292d;
+        }
+
+        .estado.ok {
+            border-color: #2d8a4c;
+            background: #163d25;
+        }
+
+        .estado.error {
+            border-color: #c55353;
+            background: #4b2020;
+        }
+
+        .identidad {
+            color: #ffc066;
+            font-weight: bold;
+        }
+
+        .ayuda {
+            color: #c8cdd1;
+            font-size: .95rem;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section>
+        <h1>Validacion de ingreso</h1>
+        <p class="ayuda">
+            Pegue el codigo leido por el dispositivo. La camara se simula;
+            la validacion y el consumo de la entrada son reales.
+        </p>
+        <p id="estado-identidad" class="identidad">Comprobando sesion...</p>
+        <a class="boton" href="/">Volver al inicio</a>
+    </section>
+
+    <section id="panel-validacion" hidden>
+        <h2>Validar entrada</h2>
+
+        <label for="asignacion">Puesto de validacion</label>
+        <select id="asignacion"></select>
+
+        <label for="codigo-qr">Codigo QR leido</label>
+        <textarea
+                id="codigo-qr"
+                maxlength="255"
+                placeholder="Pegue aqui el token obtenido del QR"
+                autocomplete="off"></textarea>
+
+        <button id="btn-validar" type="button">Validar ingreso</button>
+    </section>
+
+    <section>
+        <h2>Resultado</h2>
+        <div id="resultado" class="estado">Sin validar.</div>
+    </section>
+</main>
+
+<script type="module">
+    import { initializeApp } from
+        "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+    import {
+        getAuth,
+        onAuthStateChanged,
+        setPersistence,
+        browserLocalPersistence
+    } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyA1APg-Eq-ulU749IitSiEsKsDE1oD0wpc",
+        authDomain: "dbii-ticketing-grupo6.firebaseapp.com",
+        projectId: "dbii-ticketing-grupo6",
+        storageBucket: "dbii-ticketing-grupo6.firebasestorage.app",
+        messagingSenderId: "454622640345",
+        appId: "1:454622640345:web:af52e5c7e653c4373926c8"
+    };
+
+    const estadoIdentidad = document.getElementById('estado-identidad');
+    const panelValidacion = document.getElementById('panel-validacion');
+    const selectAsignacion = document.getElementById('asignacion');
+    const codigoQr = document.getElementById('codigo-qr');
+    const btnValidar = document.getElementById('btn-validar');
+    const resultado = document.getElementById('resultado');
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const persistenceReady = setPersistence(auth, browserLocalPersistence);
+
+    let usuarioActual = null;
+
+    function mostrarResultado(mensaje, tipo = '') {
+        resultado.textContent = mensaje;
+        resultado.className = 'estado' + (tipo ? ' ' + tipo : '');
+    }
+
+    async function fetchAutenticado(url, options = {}) {
+        if (!usuarioActual) {
+            throw new Error('No hay una sesion activa.');
+        }
+
+        const idToken = await usuarioActual.getIdToken();
+        const headers = new Headers(options.headers || {});
+        headers.set('Authorization', 'Bearer ' + idToken);
+
+        if (options.body) {
+            headers.set('Content-Type', 'application/json');
+        }
+
+        return fetch(url, { ...options, headers });
+    }
+
+    function cargarAsignaciones(asignaciones) {
+        selectAsignacion.innerHTML = '';
+
+        for (const asignacion of asignaciones) {
+            const option = document.createElement('option');
+            option.value = asignacion.idAsignacionDispositivoValidador;
+            option.textContent =
+                asignacion.seleccionLocal + ' vs ' +
+                asignacion.seleccionVisitante + ' - Sector ' +
+                asignacion.sector + ' - Dispositivo ' +
+                asignacion.idDispositivo;
+            selectAsignacion.appendChild(option);
+        }
+
+        const disponibles = asignaciones.length > 0;
+        btnValidar.disabled = !disponibles;
+        codigoQr.disabled = !disponibles;
+
+        if (!disponibles) {
+            mostrarResultado(
+                'No hay asignaciones activas para validar en este momento.',
+                'error'
+            );
+        }
+    }
+
+    async function cargarContexto() {
+        const response = await fetchAutenticado('/validacion/contexto');
+        const body = await response.json();
+
+        if (!response.ok) {
+            throw new Error(body.message || 'No se pudo cargar el contexto.');
+        }
+
+        estadoIdentidad.textContent =
+            'Validador: ' + body.nombre + ' - Legajo ' + body.numeroLegajo;
+        cargarAsignaciones(body.asignaciones || []);
+        panelValidacion.hidden = false;
+    }
+
+    async function validarIngreso() {
+        const tokenLeido = codigoQr.value.trim();
+        const idAsignacion = Number(selectAsignacion.value);
+
+        if (!tokenLeido) {
+            mostrarResultado('Pegue un codigo QR antes de validar.', 'error');
+            return;
+        }
+
+        if (!Number.isInteger(idAsignacion) || idAsignacion <= 0) {
+            mostrarResultado('Seleccione un puesto de validacion.', 'error');
+            return;
+        }
+
+        btnValidar.disabled = true;
+        mostrarResultado('Validando...');
+
+        try {
+            const response = await fetchAutenticado('/validaciones/ingreso', {
+                method: 'POST',
+                body: JSON.stringify({
+                    codigoQr: tokenLeido,
+                    idAsignacionDispositivoValidador: idAsignacion
+                })
+            });
+            const body = await response.json();
+            codigoQr.value = '';
+
+            if (response.ok && body.resultado === 'ACEPTADA') {
+                mostrarResultado(
+                    'Ingreso aceptado. La entrada quedo consumida.',
+                    'ok'
+                );
+            } else {
+                mostrarResultado(
+                    'Ingreso rechazado: ' +
+                    (body.message || 'no supera las reglas de validacion.'),
+                    'error'
+                );
+            }
+        } catch (error) {
+            mostrarResultado(
+                error.message || 'No se pudo contactar al backend.',
+                'error'
+            );
+        } finally {
+            btnValidar.disabled = selectAsignacion.options.length === 0;
+        }
+    }
+
+    btnValidar.addEventListener('click', validarIngreso);
+
+    await persistenceReady;
+
+    onAuthStateChanged(auth, async usuario => {
+        usuarioActual = usuario;
+        panelValidacion.hidden = true;
+        selectAsignacion.innerHTML = '';
+        mostrarResultado('Sin validar.');
+
+        if (!usuario) {
+            estadoIdentidad.textContent =
+                'No hay sesion iniciada. Ingrese desde la portada.';
+            return;
+        }
+
+        estadoIdentidad.textContent = 'Comprobando rol de validacion...';
+
+        try {
+            await cargarContexto();
+        } catch (error) {
+            estadoIdentidad.textContent =
+                error.message || 'No se pudo comprobar el rol de validacion.';
+            mostrarResultado('Acceso de validador no disponible.', 'error');
+        }
+    });
+</script>
+</body>
+</html>

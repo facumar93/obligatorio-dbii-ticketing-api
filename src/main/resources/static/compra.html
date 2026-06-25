@@ -43,6 +43,35 @@
             margin-top: 8px;
         }
 
+        .boton-recargar {
+            background: #f2c94c;
+            border: 1px solid #b8860b;
+            color: #222;
+            font-weight: 700;
+        }
+
+        .boton-seleccionar {
+            background: #137333;
+            border: 1px solid #6fbf73;
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        .boton-pagar {
+            background: #137333;
+            border: 1px solid #6fbf73;
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: 700;
+            padding: 0.75rem 1.4rem;
+        }
+
+        .boton-pagar:disabled {
+            background: #444;
+            border-color: #777;
+            color: #ddd;
+        }
+
         button:disabled,
         input:disabled {
             cursor: not-allowed;
@@ -81,16 +110,26 @@
             text-align: left;
         }
 
-        pre {
-            background: #222;
-            color: #eee;
-            padding: 12px;
-            overflow-x: auto;
-        }
-
         .mensaje {
             margin-top: 12px;
             font-weight: bold;
+        }
+
+        .aviso {
+            margin-top: 12px;
+            padding: 12px;
+            border: 1px solid #bbb;
+            background: #f0f0f0;
+        }
+
+        .aviso.ok {
+            border-color: #2d8a4c;
+            background: #e5f5e9;
+        }
+
+        .aviso.error {
+            border-color: #c55353;
+            background: #fde8e8;
         }
 
         .total {
@@ -103,29 +142,19 @@
 
 <body>
     <h1>Compra de entradas</h1>
-    <div class="subtitulo">Ticketing Mundial 2026</div>
 
     <div class="panel">
-        <h2 id="saludo-compra">Bienvenido a la selección de compra</h2>
-        <div class="detalle">
-            Elegí un evento, seleccioná cantidades y confirmá la reserva.
-        </div>
-    </div>
-
-    <div class="panel">
-        <h2>Acceso</h2>
-        <button id="btn-login-google">Ingresar con Google</button>
-        <div id="mensaje-auth" class="mensaje">No autenticado.</div>
+        <h2>Usuario</h2>
+        <div id="mensaje-auth" class="mensaje">Comprobando sesión...</div>
     </div>
 
     <div class="panel">
         <h2>Eventos disponibles</h2>
-        <button id="btn-recargar-eventos" disabled>Recargar eventos</button>
+        <button id="btn-recargar-eventos" class="boton-recargar" disabled>Recargar eventos</button>
 
         <table>
             <thead>
                 <tr>
-                    <th>ID</th>
                     <th>Fecha</th>
                     <th>Local</th>
                     <th>Visitante</th>
@@ -136,7 +165,7 @@
             </thead>
             <tbody id="tabla-eventos">
                 <tr>
-                    <td colspan="7">Sin eventos cargados.</td>
+                    <td colspan="6">Sin eventos cargados.</td>
                 </tr>
             </tbody>
         </table>
@@ -164,54 +193,39 @@
 
         <div class="total">Total estimado: <span id="total-estimado">0.00</span></div>
         <div class="detalle">
-            El total es estimado. El backend revalida cupo, tasa y monto al crear la venta.
+            El total es estimado. El sistema revalida cupo, tasa y monto al crear la venta.
         </div>
 
-        <button id="btn-comprar" disabled>Comprar</button>
+        <button id="btn-comprar" disabled>Reservar entradas</button>
     </div>
 
     <div class="panel">
-        <h2>Resultado</h2>
-        <pre id="respuesta-compra">Sin compra.</pre>
+        <h2>Estado de la compra</h2>
+        <div id="aviso-compra" class="aviso" role="status">
+            Elegí un evento y las cantidades para comenzar.
+        </div>
     </div>
 
     <div class="panel">
-        <h2>Pago (testing)</h2>
+        <h2>Pago simulado</h2>
         <div class="detalle">
-            Panel crudo para probar POST /ventas/{idVenta}/pagar.
-            No procesa datos reales de tarjeta.
+            Elegí el medio de pago. No se procesan datos reales de tarjetas.
         </div>
 
         <label>
-            idVenta:
-            <input id="pago-id-venta" type="number" min="1">
-        </label>
-
-        <label>
-            metodoPago:
+            Método de pago
             <select id="pago-metodo">
-                <option value="TARJETA_CREDITO">TARJETA_CREDITO</option>
-                <option value="TARJETA_DEBITO">TARJETA_DEBITO</option>
-                <option value="TRANSFERENCIA">TRANSFERENCIA</option>
+                <option value="TARJETA_CREDITO">Tarjeta de crédito</option>
+                <option value="TARJETA_DEBITO">Tarjeta de débito</option>
+                <option value="TRANSFERENCIA">Transferencia</option>
             </select>
         </label>
 
-        <label>
-            referenciaPago:
-            <input id="pago-referencia" type="text" maxlength="100">
-        </label>
+        <button id="btn-pagar-venta" class="boton-pagar" disabled>Pagar</button>
 
-        <label>
-            resultadoSimulado:
-            <select id="pago-resultado">
-                <option value="APROBADO">APROBADO</option>
-                <option value="RECHAZADO">RECHAZADO</option>
-            </select>
-        </label>
-
-        <button id="btn-pagar-venta" disabled>Pagar venta</button>
-
-        <pre id="respuesta-pago">Sin pago.</pre>
+        <div id="aviso-pago" class="aviso" role="status">
+            Primero creá una venta pendiente.
+        </div>
     </div>
 
     <div class="panel">
@@ -224,8 +238,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
         import {
             getAuth,
-            GoogleAuthProvider,
-            signInWithPopup,
             onAuthStateChanged,
             setPersistence,
             browserLocalPersistence
@@ -240,82 +252,63 @@
             appId: "1:454622640345:web:af52e5c7e653c4373926c8"
         };
 
-        const btnLoginGoogle = document.getElementById('btn-login-google');
         const btnRecargarEventos = document.getElementById('btn-recargar-eventos');
         const btnComprar = document.getElementById('btn-comprar');
         const btnPagarVenta = document.getElementById('btn-pagar-venta');
 
         const mensajeAuth = document.getElementById('mensaje-auth');
-        const saludoCompra = document.getElementById('saludo-compra');
         const tablaEventos = document.getElementById('tabla-eventos');
         const tablaSectores = document.getElementById('tabla-sectores');
         const eventoSeleccionado = document.getElementById('evento-seleccionado');
         const totalEstimado = document.getElementById('total-estimado');
-        const pagoIdVenta = document.getElementById('pago-id-venta');
         const pagoMetodo = document.getElementById('pago-metodo');
-        const pagoReferencia = document.getElementById('pago-referencia');
-        const pagoResultado = document.getElementById('pago-resultado');
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-        const googleProvider = new GoogleAuthProvider();
         const persistenceReady = setPersistence(auth, browserLocalPersistence);
 
         let eventoActual = null;
         let sectoresActuales = [];
         let compraEnCurso = false;
+        let idVentaPendiente = null;
 
-        auth.languageCode = 'es';
-
-        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
         btnRecargarEventos.addEventListener('click', cargarEventos);
         btnComprar.addEventListener('click', comprar);
         btnPagarVenta.addEventListener('click', pagarVenta);
+
+        await persistenceReady;
 
         onAuthStateChanged(auth, async usuario => {
             reiniciarCompra();
 
             if (!usuario) {
-                mensajeAuth.textContent = 'No autenticado.';
-                saludoCompra.textContent = 'Bienvenido a la selección de compra';
+                mensajeAuth.textContent =
+                    'No hay una sesión activa. Iniciá sesión desde la portada.';
                 btnRecargarEventos.disabled = true;
                 btnComprar.disabled = true;
                 btnPagarVenta.disabled = true;
                 return;
             }
 
-            mensajeAuth.textContent = 'Autenticado. Cargando eventos...';
-            saludoCompra.textContent = `Bienvenido a la selección de compra, ${usuario.displayName || usuario.email}`;
+            mensajeAuth.textContent = formatearUsuario(usuario) + '. Cargando eventos...';
             btnRecargarEventos.disabled = false;
-            btnPagarVenta.disabled = false;
-
 
             try {
                 await cargarEventos();
-                mensajeAuth.textContent = 'Autenticado. Elegi un evento para comprar.';
+                mensajeAuth.textContent = formatearUsuario(usuario);
             } catch (error) {
                 mensajeAuth.textContent = 'No se pudieron cargar los eventos.';
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: 'ERROR_CARGA_EVENTOS',
-                    message: error.message
-                });
+                mostrarAvisoCompra(
+                    'No se pudo preparar la compra. Intentá nuevamente.',
+                    'error'
+                );
             }
         });
 
-        async function ingresarConGoogle() {
-            try {
-                mensajeAuth.textContent = 'Abriendo login con Google...';
-                await persistenceReady;
-                await signInWithPopup(auth, googleProvider);
-            } catch (error) {
-                mensajeAuth.textContent = 'Error durante el login con Google.';
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: error.code || null,
-                    message: error.message
-                });
-            }
+        function formatearUsuario(usuario) {
+            const nombre = usuario.displayName || 'Sin nombre';
+            const correo = usuario.email || 'sin correo';
+            return 'Usuario: ' + nombre + ' - ' + correo;
         }
 
         async function cargarEventos() {
@@ -343,7 +336,7 @@
             if (eventos.length === 0) {
                 tablaEventos.innerHTML = `
                     <tr>
-                        <td colspan="7">No hay eventos disponibles.</td>
+                        <td colspan="6">No hay eventos disponibles.</td>
                     </tr>
                 `;
                 return;
@@ -352,13 +345,12 @@
             eventos.forEach(evento => {
                 const fila = document.createElement('tr');
                 fila.innerHTML = `
-                    <td>${evento.idEvento}</td>
                     <td>${evento.fechaHoraInicio}</td>
                     <td>${evento.seleccionLocal}</td>
                     <td>${evento.seleccionVisitante}</td>
                     <td>${evento.estadio}</td>
                     <td>${evento.ciudad}</td>
-                    <td><button type="button">Seleccionar</button></td>
+                    <td><button type="button" class="boton-seleccionar">Seleccionar</button></td>
                 `;
 
                 fila.querySelector('button').addEventListener('click', () => seleccionarEvento(evento.idEvento));
@@ -380,25 +372,24 @@
                 const evento = await leerRespuesta(respuesta);
 
                 if (!respuesta.ok) {
-                    mostrarJson('respuesta-compra', {
-                        httpStatus: respuesta.status,
-                        ok: respuesta.ok,
-                        body: evento
-                    });
+                    mostrarAvisoCompra(
+                        evento?.message || 'No se pudo seleccionar el evento.',
+                        'error'
+                    );
                     return;
                 }
 
                 eventoActual = evento;
                 sectoresActuales = evento.sectores || [];
                 renderizarSectores();
-                mostrarTexto('respuesta-compra', 'Evento seleccionado. Carga cantidades y presiona Comprar.');
+                mostrarAvisoCompra(
+                    'Evento seleccionado. Cargá las cantidades y confirmá la compra.'
+                );
             } catch (error) {
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: 'ERROR_DETALLE_EVENTO',
-                    message: 'No se pudo cargar el detalle del evento.',
-                    detail: error.message
-                });
+                mostrarAvisoCompra(
+                    'No se pudo cargar el detalle del evento.',
+                    'error'
+                );
             }
         }
 
@@ -456,11 +447,10 @@
             btnComprar.disabled = compraEnCurso || totalCantidad <= 0 || totalCantidad > 5;
 
             if (totalCantidad > 5) {
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: 'MAXIMO_5_POR_VENTA',
-                    message: 'La compra no puede superar 5 entradas en total.'
-                });
+                mostrarAvisoCompra(
+                    'La compra no puede superar 5 entradas en total.',
+                    'error'
+                );
             }
         }
 
@@ -470,11 +460,7 @@
             }
 
             if (!eventoActual) {
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: 'EVENTO_REQUERIDO',
-                    message: 'Selecciona un evento antes de comprar.'
-                });
+                mostrarAvisoCompra('Seleccioná un evento antes de comprar.', 'error');
                 return;
             }
 
@@ -482,25 +468,26 @@
             const totalCantidad = lineas.reduce((total, linea) => total + linea.cantidad, 0);
 
             if (lineas.length === 0 || totalCantidad === 0) {
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: 'SIN_CANTIDADES',
-                    message: 'Ingresa al menos una cantidad para comprar.'
-                });
+                mostrarAvisoCompra(
+                    'Ingresá al menos una cantidad para comprar.',
+                    'error'
+                );
                 return;
             }
 
             if (totalCantidad > 5) {
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: 'MAXIMO_5_POR_VENTA',
-                    message: 'La compra no puede superar 5 entradas en total.'
-                });
+                mostrarAvisoCompra(
+                    'La compra no puede superar 5 entradas en total.',
+                    'error'
+                );
                 return;
             }
 
             compraEnCurso = true;
+            idVentaPendiente = null;
             btnComprar.disabled = true;
+            btnPagarVenta.disabled = true;
+            mostrarAvisoPago('Creando la venta pendiente...');
 
             try {
                 const idToken = await obtenerTokenActual();
@@ -522,76 +509,99 @@
 
                 const datos = await leerRespuesta(respuesta);
 
-                mostrarJson('respuesta-compra', {
-                    httpStatus: respuesta.status,
-                    ok: respuesta.ok,
-                    body: datos,
-                    siguientePaso: respuesta.ok ? 'Venta pendiente creada. Proximo paso: pago.' : null
-                });
-
                 if (respuesta.ok && datos && datos.idVenta) {
-                    pagoIdVenta.value = datos.idVenta;
+                    idVentaPendiente = Number(datos.idVenta);
+                    btnPagarVenta.disabled = false;
+                    mostrarAvisoCompra(
+                        'Reserva creada. Completá el pago para emitir las entradas.',
+                        'ok'
+                    );
+                    mostrarAvisoPago('La venta está lista para pagar.');
+                    return;
                 }
 
-                if (!respuesta.ok) {
-                    compraEnCurso = false;
-                    recalcularTotal();
-                }
+                compraEnCurso = false;
+                recalcularTotal();
+                mostrarAvisoCompra(
+                    datos?.message || 'No se pudo crear la venta pendiente.',
+                    'error'
+                );
+                mostrarAvisoPago('Primero creá una venta pendiente.');
             } catch (error) {
                 compraEnCurso = false;
                 recalcularTotal();
-
-                mostrarJson('respuesta-compra', {
-                    status: 'ERROR',
-                    code: 'ERROR_FRONTEND_CREAR_VENTA',
-                    message: 'No se pudo crear la venta pendiente.',
-                    detail: error.message
-                });
+                mostrarAvisoCompra(
+                    'No se pudo crear la venta pendiente. Intentá nuevamente.',
+                    'error'
+                );
+                mostrarAvisoPago('Primero creá una venta pendiente.');
             }
         }
 
         async function pagarVenta() {
-            const idVenta = Number(pagoIdVenta.value || 0);
+            const idVenta = Number(idVentaPendiente || 0);
 
             if (!idVenta || idVenta <= 0) {
-                mostrarJson('respuesta-pago', {
-                    status: 'ERROR',
-                    code: 'ID_VENTA_REQUERIDO',
-                    message: 'Ingresa un idVenta valido.'
-                });
+                mostrarAvisoPago(
+                    'Primero creá una venta pendiente.',
+                    'error'
+                );
                 return;
             }
+
+            btnPagarVenta.disabled = true;
+            mostrarAvisoPago('Procesando el pago...');
 
             try {
                 const idToken = await obtenerTokenActual();
 
-                const respuesta = await fetch(`/ventas/${idVenta}/pagar`, {
+                const respuesta = await fetch('/ventas/' + idVenta + '/pagar', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${idToken}`,
+                        'Authorization': 'Bearer ' + idToken,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         metodoPago: pagoMetodo.value,
-                        referenciaPago: pagoReferencia.value.trim() || null,
-                        resultadoSimulado: pagoResultado.value
+                        referenciaPago: null,
+                        resultadoSimulado: 'APROBADO'
                     })
                 });
 
                 const datos = await leerRespuesta(respuesta);
 
-                mostrarJson('respuesta-pago', {
-                    httpStatus: respuesta.status,
-                    ok: respuesta.ok,
-                    body: datos
-                });
+                if (respuesta.ok) {
+                    idVentaPendiente = null;
+                    compraEnCurso = false;
+                    tablaSectores
+                        .querySelectorAll('input[data-id-sector]')
+                        .forEach(input => {
+                            input.value = '0';
+                        });
+                    recalcularTotal();
+                    btnPagarVenta.disabled = true;
+                    mostrarAvisoPago(
+                        'Pago aprobado. Tus entradas fueron emitidas.',
+                        'ok'
+                    );
+                    mostrarAvisoCompra(
+                        'Compra completada. Podés gestionar tus entradas desde la portada.',
+                        'ok'
+                    );
+                    return;
+                }
+
+                btnPagarVenta.disabled = false;
+                mostrarAvisoPago(
+                    datos?.message || 'No se pudo aprobar el pago.',
+                    'error'
+                );
             } catch (error) {
-                mostrarJson('respuesta-pago', {
-                    status: 'ERROR',
-                    code: 'ERROR_FRONTEND_PAGAR_VENTA',
-                    message: 'No se pudo disparar el pago.',
-                    detail: error.message
-                });
+                btnPagarVenta.disabled = false;
+                mostrarAvisoPago(
+                    'No se pudo completar el pago. Intentá nuevamente.',
+                    'error'
+                );
             }
         }
 
@@ -634,16 +644,19 @@
             eventoActual = null;
             sectoresActuales = [];
             compraEnCurso = false;
+            idVentaPendiente = null;
 
             tablaSectores.innerHTML = `
                 <tr>
                     <td colspan="4">Sin evento seleccionado.</td>
                 </tr>
             `;
-            eventoSeleccionado.textContent = 'Selecciona un evento.';
+            eventoSeleccionado.textContent = 'Seleccioná un evento.';
             totalEstimado.textContent = '0.00';
             btnComprar.disabled = true;
-            mostrarTexto('respuesta-compra', 'Sin compra.');
+            btnPagarVenta.disabled = true;
+            mostrarAvisoCompra('Elegí un evento y las cantidades para comenzar.');
+            mostrarAvisoPago('Primero creá una venta pendiente.');
         }
 
         async function leerRespuesta(respuesta) {
@@ -665,13 +678,16 @@
             return numero.toFixed(2);
         }
 
-        function mostrarJson(idElemento, datos) {
-            document.getElementById(idElemento).textContent =
-                JSON.stringify(datos, null, 2);
+        function mostrarAvisoCompra(texto, tipo = '') {
+            const aviso = document.getElementById('aviso-compra');
+            aviso.textContent = texto;
+            aviso.className = 'aviso' + (tipo ? ' ' + tipo : '');
         }
 
-        function mostrarTexto(idElemento, texto) {
-            document.getElementById(idElemento).textContent = texto;
+        function mostrarAvisoPago(texto, tipo = '') {
+            const aviso = document.getElementById('aviso-pago');
+            aviso.textContent = texto;
+            aviso.className = 'aviso' + (tipo ? ' ' + tipo : '');
         }
     </script>
 </body>

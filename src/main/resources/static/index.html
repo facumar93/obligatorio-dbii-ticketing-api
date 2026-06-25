@@ -138,12 +138,11 @@
 
 <body>
     <h1>Ticketing Mundial 2026</h1>
-    <div class="subtitulo">Compra, transferencia y validacion de entradas para partidos del Mundial 2026.</div>
 
     <div class="panel">
         <h2>Cartelera de proximos partidos</h2>
         <div class="detalle">
-            Partidos disponibles proximamente. Para comprar entradas, inicia sesion con Google.
+            Partidos disponibles proximamente.
         </div>
 
         <button id="btn-recargar-cartelera">Recargar cartelera</button>
@@ -233,6 +232,9 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const googleProvider = new GoogleAuthProvider();
+        googleProvider.setCustomParameters({
+            prompt: 'select_account'
+        });
         const proveedorUcu = new OAuthProvider('microsoft.com');
         proveedorUcu.setCustomParameters({
             tenant: 'e0f8e163-817a-41d6-b88e-7b4698fe5425'
@@ -290,12 +292,18 @@
             btnLoginUcu.hidden = true;
             btnLogout.hidden = false;
             btnLogout.disabled = false;
-            usuarioActual.textContent = `Sesion iniciada como ${usuario.displayName || usuario.email}`;
+            usuarioActual.textContent = formatearUsuario(usuario);
             usuarioActual.classList.add('usuario-identificado');
             mensajeAuth.textContent = 'Verificando registro del usuario...';
 
             await resolverUsuario(usuario);
         });
+
+        function formatearUsuario(usuario) {
+            const nombre = usuario.displayName || 'Sin nombre';
+            const correo = usuario.email || 'sin correo';
+            return `Usuario: ${nombre} - ${correo}`;
+        }
 
         async function cargarCartelera() {
             tablaCartelera.replaceChildren(filaMensaje('Cargando cartelera...'));

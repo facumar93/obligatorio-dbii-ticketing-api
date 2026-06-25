@@ -142,9 +142,7 @@
     <div class="subtitulo">Consultá tus entradas y administrá transferencias.</div>
 
     <div class="panel">
-        <h2>Acceso</h2>
-        <button id="btn-login-google">Ingresar con Google</button>
-        <button id="btn-logout" disabled>Cerrar sesión</button>
+        <h2>Sesión</h2>
         <button id="btn-recargar" disabled>Recargar</button>
         <a id="link-registro" class="boton-link" href="/registro.html" hidden>Completar registro</a>
 
@@ -177,9 +175,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
         import {
             getAuth,
-            GoogleAuthProvider,
-            signInWithPopup,
-            signOut,
             onAuthStateChanged,
             setPersistence,
             browserLocalPersistence
@@ -194,8 +189,6 @@
             appId: "1:454622640345:web:af52e5c7e653c4373926c8"
         };
 
-        const btnLoginGoogle = document.getElementById('btn-login-google');
-        const btnLogout = document.getElementById('btn-logout');
         const btnRecargar = document.getElementById('btn-recargar');
         const linkRegistro = document.getElementById('link-registro');
         const mensajeAuth = document.getElementById('mensaje-auth');
@@ -210,13 +203,8 @@
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-        const googleProvider = new GoogleAuthProvider();
         const persistenceReady = setPersistence(auth, browserLocalPersistence);
 
-        auth.languageCode = 'es';
-
-        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
-        btnLogout.addEventListener('click', cerrarSesion);
         btnRecargar.addEventListener('click', async () => {
             try {
                 await cargarTodo();
@@ -237,22 +225,21 @@
             }
         });
 
+        await persistenceReady;
+
         onAuthStateChanged(auth, async usuario => {
             reiniciarVista();
             btnRecargar.disabled = true;
 
             if (!usuario) {
-                mensajeAuth.textContent = 'No autenticado.';
+                mensajeAuth.textContent =
+                    'No hay una sesión activa. Iniciá sesión desde la portada.';
                 usuarioActual.textContent = 'Sin usuario.';
-                btnLoginGoogle.disabled = false;
-                btnLogout.disabled = true;
                 btnRecargar.disabled = true;
                 return;
             }
 
-            btnLoginGoogle.disabled = true;
-            btnLogout.disabled = false;
-            usuarioActual.textContent = `Sesión iniciada como ${usuario.displayName || usuario.email}`;
+            usuarioActual.textContent = formatearUsuario(usuario);
             mensajeAuth.textContent = 'Verificando registro del usuario...';
 
             const usuarioResuelto = await resolverUsuario(usuario);
@@ -273,22 +260,11 @@
             }
         });
 
-        async function ingresarConGoogle() {
-            try {
-                mensajeAuth.textContent = 'Abriendo login con Google...';
-                await persistenceReady;
-                await signInWithPopup(auth, googleProvider);
-            } catch (error) {
-                mensajeAuth.textContent = `Error durante el login con Google: ${error.message}`;
-            }
-        }
 
-        async function cerrarSesion() {
-            try {
-                await signOut(auth);
-            } catch (error) {
-                mostrarResultado(`No se pudo cerrar sesión: ${error.message}`, true);
-            }
+        function formatearUsuario(usuario) {
+            const nombre = usuario.displayName || 'Sin nombre';
+            const correo = usuario.email || 'sin correo';
+            return `Usuario: ${nombre} - ${correo}`;
         }
 
         async function resolverUsuario(usuario) {
@@ -330,7 +306,7 @@
                 ]);
 
                 if (!Array.isArray(entradas) || !Array.isArray(recibidas) || !Array.isArray(enviadas)) {
-                    throw new Error('El backend devolvió una respuesta inesperada.');
+                    throw new Error('No se pudieron interpretar las entradas y transferencias.');
                 }
 
                 const entradasConPendiente = new Set(
@@ -601,12 +577,12 @@
 
                     const mensaje = datos && datos.message
                         ? datos.message
-                        : `No se pudo renovar el QR (HTTP ${respuesta.status}).`;
+                        : 'No se pudo renovar el QR.';
                     throw new Error(mensaje);
                 }
 
                 if (!datos || !datos.codigoQr || !datos.generadoEn || !datos.expiraEn) {
-                    throw new Error('El backend devolvió una respuesta QR incompleta.');
+                    throw new Error('No se pudo generar correctamente el QR.');
                 }
 
                 dibujarQr(ciclo, datos.codigoQr);
@@ -643,7 +619,7 @@
             const duracionServidor = Date.parse(expiraEn) - Date.parse(generadoEn);
 
             if (!Number.isFinite(duracionServidor) || duracionServidor <= 0) {
-                throw new Error('El backend devolvió una vigencia QR inválida.');
+                throw new Error('No se pudo determinar la vigencia del QR.');
             }
 
             const actualizar = () => {
@@ -805,7 +781,7 @@
             if (!respuesta.ok) {
                 const mensaje = datos && datos.message
                     ? datos.message
-                    : `La operación devolvió HTTP ${respuesta.status}`;
+                    : 'No se pudo completar la operación.';
                 throw new Error(mensaje);
             }
 

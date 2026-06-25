@@ -223,7 +223,7 @@
         }
 
         estadoIdentidad.textContent =
-            'Validador: ' + body.nombre + ' - Legajo ' + body.numeroLegajo;
+            'Validador: ' + body.nombre + ' - ' + (usuarioActual.email || 'sin correo') + ' - Legajo ' + body.numeroLegajo;
         cargarAsignaciones(body.asignaciones || []);
         panelValidacion.hidden = false;
     }
@@ -270,7 +270,7 @@
             }
         } catch (error) {
             mostrarResultado(
-                error.message || 'No se pudo contactar al backend.',
+                error.message || 'No se pudo completar la validación.',
                 'error'
             );
         } finally {

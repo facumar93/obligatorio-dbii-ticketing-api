@@ -73,16 +73,26 @@
             margin: 0;
         }
 
-        pre {
-            background: #222;
-            color: #eee;
-            padding: 12px;
-            overflow-x: auto;
-        }
-
         .mensaje {
             margin-top: 12px;
             font-weight: bold;
+        }
+
+        .aviso {
+            margin-top: 12px;
+            padding: 12px;
+            border: 1px solid #bbb;
+            background: #f0f0f0;
+        }
+
+        .aviso.ok {
+            border-color: #2d8a4c;
+            background: #e5f5e9;
+        }
+
+        .aviso.error {
+            border-color: #c55353;
+            background: #fde8e8;
         }
     </style>
 </head>
@@ -92,16 +102,11 @@
     <div class="subtitulo">Datos de dominio para Ticketing Mundial 2026</div>
 
     <div class="panel">
-        <h2>Identidad Firebase</h2>
-
+        <h2>Sesión</h2>
         <div class="detalle">
-            Esta vista usa la sesión Firebase persistida localmente en el navegador.
-            Si ya ingresaste con Google en otra pestaña, debería reconocerte automáticamente.
+            Completá tus datos para vincular tu cuenta.
         </div>
-
-        <button id="btn-login-google">Ingresar con Google</button>
-        <div id="mensaje-auth" class="mensaje">No autenticado.</div>
-        <pre id="usuario-firebase">No autenticado.</pre>
+        <div id="mensaje-auth" class="mensaje">Comprobando sesión...</div>
     </div>
 
     <div class="panel">
@@ -169,8 +174,10 @@
             </fieldset>
         </form>
 
-        <h3>Respuesta del backend</h3>
-        <pre id="respuesta-backend">Sin enviar.</pre>
+        <h3>Estado del registro</h3>
+        <div id="aviso-registro" class="aviso" role="status">
+            Completá tus datos para finalizar el registro.
+        </div>
 
         <div class="acciones">
             <a href="/">
@@ -183,8 +190,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
         import {
             getAuth,
-            GoogleAuthProvider,
-            signInWithPopup,
             onAuthStateChanged,
             setPersistence,
             browserLocalPersistence
@@ -199,66 +204,50 @@
             appId: "1:454622640345:web:af52e5c7e653c4373926c8"
         };
 
-        const btnLoginGoogle = document.getElementById('btn-login-google');
         const mensajeAuth = document.getElementById('mensaje-auth');
         const camposRegistro = document.getElementById('campos-registro');
         const formRegistro = document.getElementById('form-registro');
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-        const googleProvider = new GoogleAuthProvider();
         const persistenceReady = setPersistence(auth, browserLocalPersistence);
 
-        auth.languageCode = 'es';
-
-        btnLoginGoogle.addEventListener('click', ingresarConGoogle);
         formRegistro.addEventListener('submit', registrarUsuario);
+
+        await persistenceReady;
 
         onAuthStateChanged(auth, async usuario => {
             camposRegistro.disabled = true;
 
             if (!usuario) {
-                mensajeAuth.textContent = 'No autenticado.';
-                mostrarTexto('usuario-firebase', 'No autenticado.');
+                mensajeAuth.textContent =
+                    'No hay una sesión activa. Iniciá sesión desde la portada.';
+                mostrarAvisoRegistro(
+                    'Volvé al inicio para identificarte antes de completar el registro.',
+                    'error'
+                );
                 return;
             }
 
-            mensajeAuth.textContent = 'Autenticado con Firebase. Cargando catálogos...';
-
-            mostrarJson('usuario-firebase', {
-                uid: usuario.uid,
-                email: usuario.email,
-                emailVerified: usuario.emailVerified,
-                name: usuario.displayName || null
-            });
+            mensajeAuth.textContent = formatearUsuario(usuario) + '. Cargando opciones...';
 
             try {
                 await cargarCatalogos();
                 camposRegistro.disabled = false;
                 mensajeAuth.textContent = 'Autenticado. Podés completar el registro.';
             } catch (error) {
-                mensajeAuth.textContent = 'No se pudieron cargar los catálogos.';
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    code: 'ERROR_CARGA_CATALOGOS',
-                    message: error.message
-                });
+                mensajeAuth.textContent = 'No se pudieron cargar las opciones.';
+                mostrarAvisoRegistro(
+                    'No se pudo preparar el formulario. Intentá nuevamente.',
+                    'error'
+                );
             }
         });
 
-        async function ingresarConGoogle() {
-            try {
-                mensajeAuth.textContent = 'Abriendo login con Google...';
-                await persistenceReady;
-                await signInWithPopup(auth, googleProvider);
-            } catch (error) {
-                mensajeAuth.textContent = 'Error durante el login con Google.';
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    code: error.code || null,
-                    message: error.message
-                });
-            }
+        function formatearUsuario(usuario) {
+            const nombre = usuario.displayName || 'Sin nombre';
+            const correo = usuario.email || 'sin correo';
+            return 'Usuario: ' + nombre + ' - ' + correo;
         }
 
         async function cargarCatalogos() {
@@ -281,7 +270,7 @@
             }
 
             if (datos.some(item => item.status === 'ERROR')) {
-                throw new Error(`El backend devolvió un error al cargar ${url}`);
+                throw new Error(`No se pudo cargar ${url}`);
             }
 
             return datos;
@@ -324,11 +313,10 @@
             event.preventDefault();
 
             if (!auth.currentUser) {
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    code: 'SIN_SESION_FIREBASE',
-                    message: 'No hay usuario autenticado en Firebase.'
-                });
+                mostrarAvisoRegistro(
+                    'No hay una sesión activa. Iniciá sesión desde la portada.',
+                    'error'
+                );
                 return;
             }
 
@@ -361,22 +349,25 @@
 
                 const datos = await leerRespuesta(respuesta);
 
-                mostrarJson('respuesta-backend', {
-                    httpStatus: respuesta.status,
-                    ok: respuesta.ok,
-                    body: datos
-                });
-
                 if (respuesta.ok && datos && datos.code === 'REGISTRO_OK') {
-                    mostrarTexto('mensaje-auth', 'Registro completado. Volve al inicio para continuar.');
+                    mostrarAvisoRegistro(
+                        'Registro completado. Ya podés volver al inicio.',
+                        'ok'
+                    );
+                    mensajeAuth.textContent = 'Registro completado.';
+                    camposRegistro.disabled = true;
+                    return;
                 }
+
+                mostrarAvisoRegistro(
+                    datos?.message || 'No se pudo completar el registro.',
+                    'error'
+                );
             } catch (error) {
-                mostrarJson('respuesta-backend', {
-                    status: 'ERROR',
-                    code: 'ERROR_FRONTEND_AUTH_REGISTER',
-                    message: 'No se pudo registrar el usuario.',
-                    detail: error.message
-                });
+                mostrarAvisoRegistro(
+                    'No se pudo completar el registro. Intentá nuevamente.',
+                    'error'
+                );
             }
         }
 
@@ -394,13 +385,10 @@
             }
         }
 
-        function mostrarJson(idElemento, datos) {
-            document.getElementById(idElemento).textContent =
-                JSON.stringify(datos, null, 2);
-        }
-
-        function mostrarTexto(idElemento, texto) {
-            document.getElementById(idElemento).textContent = texto;
+        function mostrarAvisoRegistro(texto, tipo = '') {
+            const aviso = document.getElementById('aviso-registro');
+            aviso.textContent = texto;
+            aviso.className = 'aviso' + (tipo ? ' ' + tipo : '');
         }
     </script>
 </body>

@@ -287,6 +287,8 @@
                     + contexto.datos.nombre
                     + ' '
                     + contexto.datos.apellido
+                    + ' - '
+                    + (usuario.email || 'sin correo')
                     + '.'
                     + jurisdiccion,
                     asignaciones.length > 0 ? 'exito' : 'error'
